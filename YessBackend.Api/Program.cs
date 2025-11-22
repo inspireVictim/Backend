@@ -1,0 +1,370 @@
+using System.Net;
+using System.Text;
+using System.Linq;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.IdentityModel.Tokens;
+using Microsoft.Extensions.Caching.StackExchangeRedis;
+using Swashbuckle.AspNetCore.Swagger;
+using Swashbuckle.AspNetCore.SwaggerGen;
+using YessBackend.Infrastructure.Data;
+using Microsoft.EntityFrameworkCore;
+using YessBackend.Application.Extensions;
+using YessBackend.Infrastructure.Extensions;
+using YessBackend.Application.Services;
+using YessBackend.Infrastructure.Services;
+using YessBackend.Api.Middleware;
+using YessBackend.Domain.Entities;
+using System.Text.Json.Serialization;
+
+var builder = WebApplication.CreateBuilder(args);
+
+// Настройка Kestrel (использует переменную окружения ASPNETCORE_URLS или настройки из appsettings.json)
+// В Docker контейнере используется ASPNETCORE_URLS=http://+:8000
+builder.WebHost.ConfigureKestrel(options =>
+{
+    // В Production режиме проверяем наличие сертификата для HTTPS
+    if (!builder.Environment.IsDevelopment())
+    {
+        var certPath = builder.Configuration["Kestrel:Certificates:Default:Path"];
+        var certPassword = builder.Configuration["Kestrel:Certificates:Default:Password"];
+        
+        // Если сертификат указан и существует - добавляем HTTPS на порт 8443
+        if (!string.IsNullOrEmpty(certPath) && System.IO.File.Exists(certPath))
+        {
+            options.Listen(IPAddress.Any, 8443, listenOptions =>
+            {
+                listenOptions.UseHttps(new System.Security.Cryptography.X509Certificates.X509Certificate2(certPath, certPassword));
+            });
+        }
+    }
+});
+
+// Настройка конфигурации
+var configuration = builder.Configuration;
+var jwtSettings = configuration.GetSection("Jwt");
+
+// Добавляем Controllers (вместо Minimal APIs для совместимости с FastAPI стилем)
+// Настраиваем поддержку form-urlencoded для OAuth2 совместимости
+builder.Services.AddControllers(options =>
+{
+    // Разрешаем обработку form-urlencoded
+    options.SuppressImplicitRequiredAttributeForNonNullableReferenceTypes = true;
+})
+.AddJsonOptions(options =>
+{
+    // Настройки JSON сериализации
+    options.JsonSerializerOptions.PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase;
+    options.JsonSerializerOptions.WriteIndented = builder.Environment.IsDevelopment();
+})
+.ConfigureApiBehaviorOptions(options =>
+{
+    // Отключаем автоматическую валидацию модели для form-urlencoded endpoints
+    // (валидация будет выполняться вручную в контроллерах)
+    options.SuppressModelStateInvalidFilter = false;
+});
+
+// CORS настройка
+var corsOrigins = configuration.GetSection("Cors:Origins").Get<string[]>() ?? Array.Empty<string>();
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowCors", policy =>
+    {
+        policy.WithOrigins(corsOrigins)
+              .AllowAnyMethod()
+              .AllowAnyHeader()
+              .AllowCredentials();
+        
+        // В development режиме разрешаем любые localhost порты
+        if (builder.Environment.IsDevelopment())
+        {
+            policy.SetIsOriginAllowed(origin => 
+                origin.Contains("localhost") || origin.Contains("127.0.0.1"));
+        }
+    });
+});
+
+// JWT Authentication
+var secretKey = jwtSettings["SecretKey"] ?? throw new InvalidOperationException("JWT SecretKey не настроен");
+var key = Encoding.UTF8.GetBytes(secretKey);
+
+builder.Services.AddAuthentication(options =>
+{
+    options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+    options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+})
+.AddJwtBearer(options =>
+{
+    options.RequireHttpsMetadata = !builder.Environment.IsDevelopment();
+    options.SaveToken = true;
+    options.TokenValidationParameters = new TokenValidationParameters
+    {
+        ValidateIssuerSigningKey = true,
+        IssuerSigningKey = new SymmetricSecurityKey(key),
+        ValidateIssuer = true,
+        ValidIssuer = jwtSettings["Issuer"],
+        ValidateAudience = true,
+        ValidAudience = jwtSettings["Audience"],
+        ValidateLifetime = true,
+        ClockSkew = TimeSpan.Zero
+    };
+});
+
+builder.Services.AddAuthorization();
+
+// Swagger/OpenAPI
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen();
+// TODO: Добавить JWT security в Swagger после установки Microsoft.OpenApi.Models
+
+// EF Core - PostgreSQL
+var connectionString = configuration.GetConnectionString("DefaultConnection") 
+    ?? throw new InvalidOperationException("Connection string 'DefaultConnection' не найден");
+
+builder.Services.AddDbContext<ApplicationDbContext>(options =>
+{
+    options.UseNpgsql(connectionString, npgsqlOptions =>
+    {
+        npgsqlOptions.CommandTimeout(30); // Таймаут запроса 30 секунд
+        npgsqlOptions.MigrationsAssembly("YessBackend.Infrastructure");
+    });
+    
+    // Логирование SQL только в Development
+    if (builder.Environment.IsDevelopment())
+    {
+        options.EnableSensitiveDataLogging();
+        options.EnableDetailedErrors();
+    }
+});
+
+// Redis
+var redisConnectionString = configuration["Redis:ConnectionString"] ?? "localhost:6379";
+builder.Services.AddStackExchangeRedisCache(options =>
+{
+    options.Configuration = redisConnectionString;
+    options.InstanceName = "YessBackend:";
+});
+
+// Регистрация сервисов
+builder.Services.AddApplicationServices();
+builder.Services.AddInfrastructureServices(configuration);
+
+// Регистрация сервисов приложения
+builder.Services.AddScoped<IAuthService, YessBackend.Infrastructure.Services.AuthService>();
+builder.Services.AddScoped<IWalletService, YessBackend.Infrastructure.Services.WalletService>();
+builder.Services.AddScoped<IPartnerService, YessBackend.Infrastructure.Services.PartnerService>();
+builder.Services.AddScoped<IOrderService, YessBackend.Infrastructure.Services.OrderService>();
+
+var app = builder.Build();
+
+// Configure the HTTP request pipeline
+// Swagger доступен в Development или если явно включен через переменную окружения
+var enableSwagger = app.Environment.IsDevelopment() || 
+                    configuration.GetValue<bool>("EnableSwagger", false);
+
+if (enableSwagger)
+{
+    app.UseSwagger();
+    app.UseSwaggerUI(c =>
+    {
+        c.SwaggerEndpoint("/swagger/v1/swagger.json", "YESS API v1");
+        c.RoutePrefix = "docs"; // /docs для совместимости с FastAPI
+    });
+}
+else
+{
+    // Production: HTTPS redirect и HSTS только если HTTPS настроен
+    var certPath = configuration["Kestrel:Certificates:Default:Path"];
+    if (!string.IsNullOrEmpty(certPath) && System.IO.File.Exists(certPath))
+    {
+        app.UseHttpsRedirection();
+        app.UseHsts();
+    }
+}
+
+// Глобальный обработчик исключений (первым)
+app.UseGlobalExceptionHandler();
+
+// Rate Limiting
+app.UseRateLimiting(configuration);
+
+// CORS должен быть перед UseAuthentication
+app.UseCors("AllowCors");
+
+app.UseAuthentication();
+app.UseAuthorization();
+
+// Root endpoint
+app.MapGet("/", () => new
+{
+    status = "ok",
+    service = "yess-backend",
+    api = "/api/v1",
+    docs = "/docs"
+});
+
+// Health check endpoints (как в Python версии)
+app.MapGet("/health", () => new
+{
+    status = "healthy",
+    service = "yess-backend",
+    version = "1.0.0",
+    timestamp = DateTime.UtcNow
+});
+
+// Health check по пути /api/v1/health (для совместимости с frontend)
+app.MapGet("/api/v1/health", () => new
+{
+    status = "healthy",
+    service = "yess-backend",
+    version = "1.0.0",
+    timestamp = DateTime.UtcNow
+});
+
+// Health check для базы данных
+app.MapGet("/health/db", async (ApplicationDbContext db) =>
+{
+    try
+    {
+        // Проверяем подключение к БД
+        var canConnect = await db.Database.CanConnectAsync();
+        if (canConnect)
+        {
+            return Results.Ok(new
+            {
+                status = "healthy",
+                database = "connected",
+                timestamp = DateTime.UtcNow
+            });
+        }
+        else
+        {
+            return Results.StatusCode(503);
+        }
+    }
+    catch
+    {
+        return Results.StatusCode(503);
+    }
+});
+
+// Минимальный endpoint для отправки SMS кода (совместимость с мобильным клиентом)
+app.MapPost("/api/v1/auth/send-verification-code",
+    (SendVerificationCodeRequest request, ILogger<Program> logger) =>
+{
+    if (string.IsNullOrWhiteSpace(request.PhoneNumber))
+    {
+        return Results.BadRequest(new { error = "phone_number is required" });
+    }
+
+    const string code = "123456";
+    logger.LogInformation("Минимальный endpoint: отправка SMS кода на {Phone}. Код: {Code}", request.PhoneNumber, code);
+
+    return Results.Ok(new
+    {
+        status = "code_sent",
+        phone_number = request.PhoneNumber,
+        code
+    });
+});
+
+// Автоматическое применение миграций при старте приложения
+using (var scope = app.Services.CreateScope())
+{
+    var services = scope.ServiceProvider;
+    try
+    {
+        var dbContext = services.GetRequiredService<ApplicationDbContext>();
+        var logger = services.GetRequiredService<ILogger<Program>>();
+        
+        // Проверяем, есть ли ожидающие миграции
+        var pendingMigrations = await dbContext.Database.GetPendingMigrationsAsync();
+        if (pendingMigrations.Any())
+        {
+            logger.LogInformation("Применение {Count} ожидающих миграций...", pendingMigrations.Count());
+            foreach (var migration in pendingMigrations)
+            {
+                logger.LogInformation("  - {Migration}", migration);
+            }
+            
+            // Применяем все ожидающие миграции
+            await dbContext.Database.MigrateAsync();
+            logger.LogInformation("Миграции успешно применены.");
+        }
+        else
+        {
+            logger.LogInformation("База данных актуальна, ожидающих миграций нет.");
+        }
+
+        // Seed тестового пользователя для мобильного клиента
+        try
+        {
+            var authService = services.GetRequiredService<IAuthService>();
+            const string testPhone = "+996504876087";
+            const string testPassword = "123456";
+
+            var existingUser = await authService.GetUserByPhoneAsync(testPhone);
+            if (existingUser == null)
+            {
+                var user = new User
+                {
+                    Phone = testPhone,
+                    Email = "testuser@example.com",
+                    FirstName = "Test",
+                    LastName = "User",
+                    PasswordHash = authService.HashPassword(testPassword),
+                    PhoneVerified = true,
+                    EmailVerified = false,
+                    IsActive = true,
+                    IsBlocked = false,
+                    CreatedAt = DateTime.UtcNow,
+                    UpdatedAt = DateTime.UtcNow
+                };
+
+                dbContext.Users.Add(user);
+                await dbContext.SaveChangesAsync();
+
+                var wallet = new Wallet
+                {
+                    UserId = user.Id,
+                    Balance = 0.0m,
+                    YescoinBalance = 0.0m,
+                    TotalEarned = 0.0m,
+                    TotalSpent = 0.0m,
+                    LastUpdated = DateTime.UtcNow
+                };
+
+                dbContext.Wallets.Add(wallet);
+                await dbContext.SaveChangesAsync();
+
+                logger.LogInformation("Создан тестовый пользователь {Phone} с паролем {Password}", testPhone, testPassword);
+            }
+            else
+            {
+                logger.LogInformation("Тестовый пользователь {Phone} уже существует (Id={Id})", existingUser.Phone, existingUser.Id);
+            }
+        }
+        catch (Exception seedEx)
+        {
+            logger.LogError(seedEx, "Ошибка при создании тестового пользователя.");
+        }
+    }
+    catch (Exception ex)
+    {
+        var logger = services.GetRequiredService<ILogger<Program>>();
+        logger.LogError(ex, "Ошибка при применении миграций базы данных.");
+        // В Development режиме выбрасываем исключение, чтобы увидеть проблему
+        if (app.Environment.IsDevelopment())
+        {
+            throw;
+        }
+        // В Production продолжаем работу, но логируем ошибку
+    }
+}
+
+// Map Controllers
+app.MapControllers();
+
+app.Run();
+
+public record SendVerificationCodeRequest(
+    [property: JsonPropertyName("phone_number")] string PhoneNumber);
