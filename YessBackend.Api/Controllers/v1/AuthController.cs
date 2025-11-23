@@ -229,23 +229,29 @@ public class AuthController : ControllerBase
     /// <summary>
     /// Отправка SMS кода
     /// POST /api/v1/auth/send-verification-code
+    /// POST /api/v1/auth/send-code (алиас для совместимости)
     /// </summary>
     [HttpPost("send-verification-code")]
+    [HttpPost("send-code")] // Алиас для совместимости с некоторыми клиентами
     [Consumes("application/json")]
     [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public async Task<ActionResult> SendVerificationCode([FromBody] SendVerificationCodeRequestDto request)
     {
-        if (string.IsNullOrWhiteSpace(request.PhoneNumber))
+        _logger.LogInformation("📱 [AUTH] Получен запрос на отправку кода верификации для номера: {Phone}", request?.PhoneNumber);
+
+        if (string.IsNullOrWhiteSpace(request?.PhoneNumber))
         {
+            _logger.LogWarning("❌ [AUTH] Запрос без номера телефона");
             return BadRequest(new { error = "phone_number is required" });
         }
 
         try
         {
+            _logger.LogInformation("✅ [AUTH] Вызов SendVerificationCodeAsync для номера: {Phone}", request.PhoneNumber);
             var code = await _authService.SendVerificationCodeAsync(request.PhoneNumber);
             
-            _logger.LogInformation("Отправка SMS кода на номер {Phone}. Код: {Code}", request.PhoneNumber, code);
+            _logger.LogInformation("✅ [AUTH] Код верификации успешно сохранен в БД для номера {Phone}. Код: {Code}", request.PhoneNumber, code);
 
             // В development режиме возвращаем код для тестирования
             // В production кода не должно быть в ответе
@@ -261,25 +267,28 @@ public class AuthController : ControllerBase
             if (isDevelopment)
             {
                 // Добавляем код только в development режиме
-                return Ok(new
+                var devResponse = new
                 {
                     phone_number = request.PhoneNumber,
                     code,
+                    verification_code = code, // Дополнительное поле для совместимости
                     message = "Код отправлен (development mode)",
                     success = true
-                });
+                };
+                _logger.LogInformation("✅ [AUTH] Возвращаем код в ответе (development mode): {Code}", code);
+                return Ok(devResponse);
             }
 
             return Ok(response);
         }
         catch (InvalidOperationException ex)
         {
-            _logger.LogWarning(ex, "Ошибка отправки кода верификации");
+            _logger.LogWarning(ex, "❌ [AUTH] Ошибка отправки кода верификации: {Message}", ex.Message);
             return BadRequest(new { error = ex.Message });
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Ошибка отправки кода верификации");
+            _logger.LogError(ex, "❌ [AUTH] Внутренняя ошибка при отправке кода верификации");
             return StatusCode(500, new { error = "Ошибка отправки кода" });
         }
     }
@@ -294,20 +303,26 @@ public class AuthController : ControllerBase
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     public async Task<ActionResult<UserResponseDto>> VerifyCodeAndRegister([FromBody] VerifyCodeAndRegisterRequestDto request)
     {
+        _logger.LogInformation("🔐 [AUTH] Получен запрос на проверку кода и регистрацию для номера: {Phone}, код: {Code}", 
+            request?.PhoneNumber, request?.Code);
+
         try
         {
             var user = await _authService.VerifyCodeAndRegisterAsync(request);
             var response = _mapper.Map<UserResponseDto>(user);
+            _logger.LogInformation("✅ [AUTH] Регистрация успешна для номера: {Phone}, UserId: {UserId}", 
+                request?.PhoneNumber, user.Id);
             return Ok(response);
         }
         catch (InvalidOperationException ex)
         {
-            _logger.LogWarning(ex, "Ошибка проверки кода и регистрации");
+            _logger.LogWarning(ex, "❌ [AUTH] Ошибка проверки кода и регистрации для номера {Phone}: {Message}", 
+                request?.PhoneNumber, ex.Message);
             return BadRequest(new { error = ex.Message });
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Ошибка регистрации");
+            _logger.LogError(ex, "❌ [AUTH] Внутренняя ошибка при регистрации для номера {Phone}", request?.PhoneNumber);
             return StatusCode(500, new { error = "Ошибка регистрации" });
         }
     }

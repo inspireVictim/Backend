@@ -50,16 +50,30 @@ public class PaymentsController : ControllerBase
                 return Unauthorized(new { error = "Неверный токен" });
             }
 
-            var balance = await _walletService.GetBalanceAsync(userId.Value);
-            var yescoinBalance = await _walletService.GetYescoinBalanceAsync(userId.Value);
+            // ОДИН запрос к БД вместо трех - получаем весь объект кошелька
             var wallet = await _walletService.GetWalletByUserIdAsync(userId.Value);
+            
+            // Если кошелька нет, создаем его (если нужно)
+            if (wallet == null)
+            {
+                // Можно создать кошелек здесь или в сервисе
+                // Пока возвращаем нулевой баланс
+                return Ok(new
+                {
+                    balance = 0m,
+                    currency = "KGS",
+                    yescoin_balance = 0m,
+                    last_updated = DateTime.UtcNow
+                });
+            }
 
+            // Используем данные из одного объекта wallet вместо трех запросов
             return Ok(new
             {
-                balance = balance,
+                balance = wallet.Balance,
                 currency = "KGS",
-                yescoin_balance = yescoinBalance,
-                last_updated = wallet?.LastUpdated ?? DateTime.UtcNow
+                yescoin_balance = wallet.YescoinBalance,
+                last_updated = wallet.LastUpdated
             });
         }
         catch (Exception ex)

@@ -2,6 +2,7 @@ using System.Security.Claims;
 using System.Text;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 using Microsoft.IdentityModel.Tokens;
 using System.IdentityModel.Tokens.Jwt;
 using YessBackend.Application.DTOs.Auth;
@@ -19,11 +20,13 @@ public class AuthService : IAuthService
 {
     private readonly ApplicationDbContext _context;
     private readonly IConfiguration _configuration;
+    private readonly ILogger<AuthService>? _logger;
 
-    public AuthService(ApplicationDbContext context, IConfiguration configuration)
+    public AuthService(ApplicationDbContext context, IConfiguration configuration, ILogger<AuthService>? logger = null)
     {
         _context = context;
         _configuration = configuration;
+        _logger = logger;
     }
 
     public async Task<User> RegisterUserAsync(UserRegisterDto userDto)
@@ -142,9 +145,12 @@ public class AuthService : IAuthService
 
     public async Task<string> SendVerificationCodeAsync(string phoneNumber)
     {
+        _logger?.LogInformation("🔐 [AUTH SERVICE] SendVerificationCodeAsync вызван для номера: {Phone}", phoneNumber);
+
         // Генерируем 6-значный код
         var random = new Random();
         var code = random.Next(100000, 999999).ToString("D6");
+        _logger?.LogInformation("🔐 [AUTH SERVICE] Сгенерирован код: {Code}", code);
 
         // Проверяем, существует ли пользователь
         var user = await _context.Users
@@ -152,19 +158,25 @@ public class AuthService : IAuthService
 
         if (user != null)
         {
+            _logger?.LogInformation("🔐 [AUTH SERVICE] Пользователь найден в БД для номера: {Phone}, UserId: {UserId}", phoneNumber, user.Id);
+            
             // Если пользователь существует, сохраняем код
             // Но только если он еще не зарегистрирован (нет пароля)
             if (!string.IsNullOrEmpty(user.PasswordHash))
             {
+                _logger?.LogWarning("❌ [AUTH SERVICE] Пользователь с номером {Phone} уже зарегистрирован (есть PasswordHash)", phoneNumber);
                 throw new InvalidOperationException("Пользователь с таким номером телефона уже зарегистрирован");
             }
 
             user.VerificationCode = code;
             user.VerificationExpiresAt = DateTime.UtcNow.AddMinutes(10);
             await _context.SaveChangesAsync();
+            _logger?.LogInformation("✅ [AUTH SERVICE] Код {Code} сохранен в БД для существующего пользователя {UserId}", code, user.Id);
         }
         else
         {
+            _logger?.LogInformation("🔐 [AUTH SERVICE] Пользователь не найден, создаем временную запись для номера: {Phone}", phoneNumber);
+            
             // Если пользователя нет, создаем временную запись пользователя для сохранения кода
             // Это нужно для проверки кода при регистрации
             var tempUser = new User
@@ -181,6 +193,7 @@ public class AuthService : IAuthService
 
             _context.Users.Add(tempUser);
             await _context.SaveChangesAsync();
+            _logger?.LogInformation("✅ [AUTH SERVICE] Временный пользователь создан с UserId: {UserId}, код {Code} сохранен в БД", tempUser.Id, code);
         }
 
         // TODO: Здесь должна быть отправка SMS через внешний сервис (Twilio и т.д.)
@@ -191,18 +204,27 @@ public class AuthService : IAuthService
 
     public async Task<User> VerifyCodeAndRegisterAsync(VerifyCodeAndRegisterRequestDto requestDto)
     {
+        _logger?.LogInformation("🔐 [AUTH SERVICE] VerifyCodeAndRegisterAsync вызван для номера: {Phone}, код: {Code}", 
+            requestDto.PhoneNumber, requestDto.Code);
+
         // Проверяем код верификации
         var user = await _context.Users
             .FirstOrDefaultAsync(u => u.Phone == requestDto.PhoneNumber);
 
         if (user == null)
         {
+            _logger?.LogWarning("❌ [AUTH SERVICE] Пользователь не найден для номера: {Phone}. Код верификации не был отправлен!", requestDto.PhoneNumber);
             throw new InvalidOperationException("Код верификации не найден. Сначала отправьте код верификации.");
         }
+
+        _logger?.LogInformation("🔐 [AUTH SERVICE] Пользователь найден: UserId={UserId}, VerificationCode={StoredCode}, VerificationExpiresAt={ExpiresAt}", 
+            user.Id, user.VerificationCode ?? "null", user.VerificationExpiresAt);
 
         // Проверяем, что код был отправлен (пользователь существует)
         if (string.IsNullOrEmpty(user.VerificationCode))
         {
+            _logger?.LogWarning("❌ [AUTH SERVICE] VerificationCode пустой для пользователя {UserId} (номер {Phone}). Код не был отправлен!", 
+                user.Id, requestDto.PhoneNumber);
             throw new InvalidOperationException("Код верификации не найден. Сначала отправьте код верификации.");
         }
 
