@@ -4,8 +4,6 @@ using System.Linq;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.Extensions.Caching.StackExchangeRedis;
-using Swashbuckle.AspNetCore.Swagger;
-using Swashbuckle.AspNetCore.SwaggerGen;
 using YessBackend.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using YessBackend.Application.Extensions;
@@ -113,8 +111,11 @@ builder.Services.AddAuthorization();
 
 // Swagger/OpenAPI
 builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
-// TODO: Добавить JWT security в Swagger после установки Microsoft.OpenApi.Models
+builder.Services.AddSwaggerGen(options =>
+{
+    // Исправляем проблемы с именами схем (избегаем конфликтов имен типов)
+    options.CustomSchemaIds(type => type.FullName?.Replace("+", ".") ?? type.Name);
+});
 
 // EF Core - PostgreSQL
 var connectionString = configuration.GetConnectionString("DefaultConnection") 
@@ -157,12 +158,16 @@ builder.Services.AddScoped<IOrderService, YessBackend.Infrastructure.Services.Or
 var app = builder.Build();
 
 // Configure the HTTP request pipeline
+// Swagger ДОЛЖЕН быть ПЕРЕД глобальным обработчиком исключений,
+// чтобы видеть реальные ошибки при генерации документации
+
 // Swagger доступен в Development или если явно включен через переменную окружения
 var enableSwagger = app.Environment.IsDevelopment() || 
                     configuration.GetValue<bool>("EnableSwagger", false);
 
 if (enableSwagger)
 {
+    // Swagger middleware ПЕРЕД обработчиком исключений
     app.UseSwagger();
     app.UseSwaggerUI(c =>
     {
@@ -181,7 +186,7 @@ else
     }
 }
 
-// Глобальный обработчик исключений (первым)
+// Глобальный обработчик исключений (после Swagger, чтобы не перехватывать ошибки генерации документации)
 app.UseGlobalExceptionHandler();
 
 // Rate Limiting
@@ -245,26 +250,6 @@ app.MapGet("/health/db", async (ApplicationDbContext db) =>
     {
         return Results.StatusCode(503);
     }
-});
-
-// Минимальный endpoint для отправки SMS кода (совместимость с мобильным клиентом)
-app.MapPost("/api/v1/auth/send-verification-code",
-    (SendVerificationCodeRequest request, ILogger<Program> logger) =>
-{
-    if (string.IsNullOrWhiteSpace(request.PhoneNumber))
-    {
-        return Results.BadRequest(new { error = "phone_number is required" });
-    }
-
-    const string code = "123456";
-    logger.LogInformation("Минимальный endpoint: отправка SMS кода на {Phone}. Код: {Code}", request.PhoneNumber, code);
-
-    return Results.Ok(new
-    {
-        status = "code_sent",
-        phone_number = request.PhoneNumber,
-        code
-    });
 });
 
 // Автоматическое применение миграций при старте приложения
@@ -365,6 +350,3 @@ using (var scope = app.Services.CreateScope())
 app.MapControllers();
 
 app.Run();
-
-public record SendVerificationCodeRequest(
-    [property: JsonPropertyName("phone_number")] string PhoneNumber);

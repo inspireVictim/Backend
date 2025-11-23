@@ -21,6 +21,15 @@ public class GlobalExceptionHandlerMiddleware
 
     public async Task InvokeAsync(HttpContext context)
     {
+        // Исключаем Swagger endpoints из глобального обработчика исключений
+        // чтобы видеть реальные ошибки при генерации документации
+        var path = context.Request.Path.Value?.ToLower() ?? "";
+        if (path.StartsWith("/swagger") || path.StartsWith("/docs"))
+        {
+            await _next(context);
+            return;
+        }
+
         try
         {
             await _next(context);
