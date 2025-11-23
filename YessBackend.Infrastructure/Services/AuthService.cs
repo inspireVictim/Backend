@@ -134,6 +134,177 @@ public class AuthService : IAuthService
             .FirstOrDefaultAsync(u => u.Phone == phone);
     }
 
+    public async Task<User?> GetUserByIdAsync(int userId)
+    {
+        return await _context.Users
+            .FirstOrDefaultAsync(u => u.Id == userId);
+    }
+
+    public async Task<string> SendVerificationCodeAsync(string phoneNumber)
+    {
+        // Генерируем 6-значный код
+        var random = new Random();
+        var code = random.Next(100000, 999999).ToString("D6");
+
+        // Проверяем, существует ли пользователь
+        var user = await _context.Users
+            .FirstOrDefaultAsync(u => u.Phone == phoneNumber);
+
+        if (user != null)
+        {
+            // Если пользователь существует, сохраняем код
+            // Но только если он еще не зарегистрирован (нет пароля)
+            if (!string.IsNullOrEmpty(user.PasswordHash))
+            {
+                throw new InvalidOperationException("Пользователь с таким номером телефона уже зарегистрирован");
+            }
+
+            user.VerificationCode = code;
+            user.VerificationExpiresAt = DateTime.UtcNow.AddMinutes(10);
+            await _context.SaveChangesAsync();
+        }
+        else
+        {
+            // Если пользователя нет, создаем временную запись пользователя для сохранения кода
+            // Это нужно для проверки кода при регистрации
+            var tempUser = new User
+            {
+                Phone = phoneNumber,
+                Email = $"{phoneNumber}@temp.local",
+                VerificationCode = code,
+                VerificationExpiresAt = DateTime.UtcNow.AddMinutes(10),
+                PhoneVerified = false,
+                IsActive = false, // Временно неактивен до завершения регистрации
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            };
+
+            _context.Users.Add(tempUser);
+            await _context.SaveChangesAsync();
+        }
+
+        // TODO: Здесь должна быть отправка SMS через внешний сервис (Twilio и т.д.)
+        // Пока возвращаем код для тестирования
+        
+        return code;
+    }
+
+    public async Task<User> VerifyCodeAndRegisterAsync(VerifyCodeAndRegisterRequestDto requestDto)
+    {
+        // Проверяем код верификации
+        var user = await _context.Users
+            .FirstOrDefaultAsync(u => u.Phone == requestDto.PhoneNumber);
+
+        if (user == null)
+        {
+            throw new InvalidOperationException("Код верификации не найден. Сначала отправьте код верификации.");
+        }
+
+        // Проверяем, что код был отправлен (пользователь существует)
+        if (string.IsNullOrEmpty(user.VerificationCode))
+        {
+            throw new InvalidOperationException("Код верификации не найден. Сначала отправьте код верификации.");
+        }
+
+        // Проверяем срок действия кода
+        if (user.VerificationExpiresAt.HasValue && user.VerificationExpiresAt.Value < DateTime.UtcNow)
+        {
+            throw new InvalidOperationException("Срок действия кода верификации истек. Отправьте новый код.");
+        }
+
+        // Проверяем код
+        if (user.VerificationCode != requestDto.Code)
+        {
+            throw new InvalidOperationException("Неверный код верификации");
+        }
+
+        // Проверяем, не зарегистрирован ли уже пользователь (есть ли пароль)
+        if (!string.IsNullOrEmpty(user.PasswordHash))
+        {
+            throw new InvalidOperationException("Пользователь с таким номером телефона уже зарегистрирован");
+        }
+
+        // Обновляем данные пользователя (вместо создания нового)
+        user.PasswordHash = HashPassword(requestDto.Password);
+        user.FirstName = requestDto.FirstName;
+        user.LastName = requestDto.LastName;
+        user.Name = $"{requestDto.FirstName} {requestDto.LastName}";
+        
+        if (requestDto.CityId.HasValue && requestDto.CityId.Value > 0)
+        {
+            user.CityId = requestDto.CityId.Value;
+        }
+
+        // Обрабатываем реферальную систему
+        if (!string.IsNullOrEmpty(requestDto.ReferralCode))
+        {
+            var referredByUser = await _context.Users
+                .FirstOrDefaultAsync(u => u.ReferralCode == requestDto.ReferralCode);
+            if (referredByUser != null)
+            {
+                user.ReferredBy = referredByUser.Id;
+            }
+        }
+
+        // Генерируем уникальный реферальный код для нового пользователя, если его еще нет
+        if (string.IsNullOrEmpty(user.ReferralCode))
+        {
+            user.ReferralCode = GenerateUniqueReferralCode();
+        }
+
+        user.VerificationCode = null;
+        user.PhoneVerified = true;
+        user.UpdatedAt = DateTime.UtcNow;
+
+        await _context.SaveChangesAsync();
+
+        // Создаем кошелек для нового пользователя, если его еще нет
+        var existingWallet = await _context.Wallets
+            .FirstOrDefaultAsync(w => w.UserId == user.Id);
+
+        if (existingWallet == null)
+        {
+            var wallet = new Wallet
+            {
+                UserId = user.Id,
+                Balance = 0.0m,
+                YescoinBalance = 0.0m,
+                TotalEarned = 0.0m,
+                TotalSpent = 0.0m,
+                LastUpdated = DateTime.UtcNow
+            };
+            _context.Wallets.Add(wallet);
+            await _context.SaveChangesAsync();
+        }
+
+        return user;
+    }
+
+    public async Task<ReferralStatsResponseDto> GetReferralStatsAsync(int userId)
+    {
+        // Подсчитываем всех приглашенных пользователей
+        var totalReferred = await _context.Users
+            .CountAsync(u => u.ReferredBy == userId);
+
+        // Подсчитываем активных приглашенных пользователей (которые заходили за последние 30 дней)
+        var thirtyDaysAgo = DateTime.UtcNow.AddDays(-30);
+        var activeReferred = await _context.Users
+            .CountAsync(u => u.ReferredBy == userId && 
+                           u.LastLoginAt.HasValue && 
+                           u.LastLoginAt.Value >= thirtyDaysAgo);
+
+        // Получаем реферальный код текущего пользователя
+        var user = await GetUserByIdAsync(userId);
+        var referralCode = user?.ReferralCode;
+
+        return new ReferralStatsResponseDto
+        {
+            TotalReferred = totalReferred,
+            ActiveReferred = activeReferred,
+            ReferralCode = referralCode
+        };
+    }
+
     public string HashPassword(string password)
     {
         if (string.IsNullOrEmpty(password))

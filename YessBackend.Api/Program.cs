@@ -145,6 +145,9 @@ builder.Services.AddStackExchangeRedisCache(options =>
     options.InstanceName = "YessBackend:";
 });
 
+// HttpClient для внешних API (OSRM, GraphHopper и т.д.)
+builder.Services.AddHttpClient();
+
 // Регистрация сервисов
 builder.Services.AddApplicationServices();
 builder.Services.AddInfrastructureServices(configuration);
@@ -154,6 +157,20 @@ builder.Services.AddScoped<IAuthService, YessBackend.Infrastructure.Services.Aut
 builder.Services.AddScoped<IWalletService, YessBackend.Infrastructure.Services.WalletService>();
 builder.Services.AddScoped<IPartnerService, YessBackend.Infrastructure.Services.PartnerService>();
 builder.Services.AddScoped<IOrderService, YessBackend.Infrastructure.Services.OrderService>();
+builder.Services.AddScoped<IHealthService, YessBackend.Infrastructure.Services.HealthService>();
+builder.Services.AddScoped<IRouteService, YessBackend.Infrastructure.Services.RouteService>();
+builder.Services.AddScoped<ILocationService, YessBackend.Infrastructure.Services.LocationService>();
+builder.Services.AddScoped<IStorageService, YessBackend.Infrastructure.Services.StorageService>();
+builder.Services.AddScoped<IQRService, YessBackend.Infrastructure.Services.QRService>();
+builder.Services.AddScoped<IStoryService, YessBackend.Infrastructure.Services.StoryService>();
+builder.Services.AddScoped<IPartnerProductService, YessBackend.Infrastructure.Services.PartnerProductService>();
+builder.Services.AddScoped<IOrderPaymentService, YessBackend.Infrastructure.Services.OrderPaymentService>();
+builder.Services.AddScoped<IWebhookService, YessBackend.Infrastructure.Services.WebhookService>();
+builder.Services.AddScoped<IPaymentProviderService, YessBackend.Infrastructure.Services.PaymentProviderService>();
+builder.Services.AddScoped<INotificationService, YessBackend.Infrastructure.Services.NotificationService>();
+builder.Services.AddScoped<IAchievementService, YessBackend.Infrastructure.Services.AchievementService>();
+builder.Services.AddScoped<IPromotionService, YessBackend.Infrastructure.Services.PromotionService>();
+builder.Services.AddScoped<IBankService, YessBackend.Infrastructure.Services.BankService>();
 
 var app = builder.Build();
 
@@ -207,7 +224,8 @@ app.MapGet("/", () => new
     docs = "/docs"
 });
 
-// Health check endpoints (как в Python версии)
+// Health check endpoint (базовый, без проверки БД)
+// Основной health check находится в HealthController: /api/v1/health
 app.MapGet("/health", () => new
 {
     status = "healthy",
@@ -216,14 +234,7 @@ app.MapGet("/health", () => new
     timestamp = DateTime.UtcNow
 });
 
-// Health check по пути /api/v1/health (для совместимости с frontend)
-app.MapGet("/api/v1/health", () => new
-{
-    status = "healthy",
-    service = "yess-backend",
-    version = "1.0.0",
-    timestamp = DateTime.UtcNow
-});
+// /api/v1/health определен в HealthController - удаляем дубликат Minimal API
 
 // Health check для базы данных
 app.MapGet("/health/db", async (ApplicationDbContext db) =>

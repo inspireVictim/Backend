@@ -200,55 +200,144 @@ public class AuthController : ControllerBase
     [Authorize]
     [ProducesResponseType(typeof(UserResponseDto), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-    public Task<ActionResult<UserResponseDto>> GetMe()
+    public async Task<ActionResult<UserResponseDto>> GetMe()
     {
         try
         {
             var userId = User.FindFirst("user_id")?.Value;
             if (string.IsNullOrEmpty(userId))
             {
-                return Task.FromResult<ActionResult<UserResponseDto>>(Unauthorized(new { error = "Неверный токен" }));
+                return Unauthorized(new { error = "Неверный токен" });
             }
 
-            // TODO: Реализовать получение пользователя по ID
-            // var user = await _authService.GetUserByIdAsync(int.Parse(userId));
-            // var response = _mapper.Map<UserResponseDto>(user);
-            // return Ok(response);
-            
-            return Task.FromResult<ActionResult<UserResponseDto>>(Ok(new { message = "Endpoint в разработке" }));
+            var user = await _authService.GetUserByIdAsync(int.Parse(userId));
+            if (user == null)
+            {
+                return Unauthorized(new { error = "Пользователь не найден" });
+            }
+
+            var response = _mapper.Map<UserResponseDto>(user);
+            return Ok(response);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Ошибка получения информации о пользователе");
-            return Task.FromResult<ActionResult<UserResponseDto>>(Unauthorized(new { error = "Ошибка аутентификации" }));
+            return Unauthorized(new { error = "Ошибка аутентификации" });
         }
     }
 
     /// <summary>
-    /// Отправка SMS кода (заглушка)
+    /// Отправка SMS кода
     /// POST /api/v1/auth/send-verification-code
     /// </summary>
     [HttpPost("send-verification-code")]
     [Consumes("application/json")]
     [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
-    public ActionResult SendVerificationCode([FromBody] SendVerificationCodeRequestDto request)
+    public async Task<ActionResult> SendVerificationCode([FromBody] SendVerificationCodeRequestDto request)
     {
         if (string.IsNullOrWhiteSpace(request.PhoneNumber))
         {
             return BadRequest(new { error = "phone_number is required" });
         }
 
-        const string code = "123456";
-        _logger.LogInformation("Отправка SMS кода (заглушка) на номер {Phone}. Код: {Code}", request.PhoneNumber, code);
-
-        return Ok(new
+        try
         {
-            phone_number = request.PhoneNumber,
-            code,
-            message = "Код отправлен (заглушка)",
-            success = true
-        });
+            var code = await _authService.SendVerificationCodeAsync(request.PhoneNumber);
+            
+            _logger.LogInformation("Отправка SMS кода на номер {Phone}. Код: {Code}", request.PhoneNumber, code);
+
+            // В development режиме возвращаем код для тестирования
+            // В production кода не должно быть в ответе
+            var isDevelopment = _configuration.GetValue<bool>("DevelopmentMode", true);
+            
+            var response = new
+            {
+                phone_number = request.PhoneNumber,
+                message = "Код отправлен",
+                success = true
+            };
+
+            if (isDevelopment)
+            {
+                // Добавляем код только в development режиме
+                return Ok(new
+                {
+                    phone_number = request.PhoneNumber,
+                    code,
+                    message = "Код отправлен (development mode)",
+                    success = true
+                });
+            }
+
+            return Ok(response);
+        }
+        catch (InvalidOperationException ex)
+        {
+            _logger.LogWarning(ex, "Ошибка отправки кода верификации");
+            return BadRequest(new { error = ex.Message });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Ошибка отправки кода верификации");
+            return StatusCode(500, new { error = "Ошибка отправки кода" });
+        }
+    }
+
+    /// <summary>
+    /// Проверка кода верификации и регистрация пользователя
+    /// POST /api/v1/auth/verify-code
+    /// </summary>
+    [HttpPost("verify-code")]
+    [Consumes("application/json")]
+    [ProducesResponseType(typeof(UserResponseDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<UserResponseDto>> VerifyCodeAndRegister([FromBody] VerifyCodeAndRegisterRequestDto request)
+    {
+        try
+        {
+            var user = await _authService.VerifyCodeAndRegisterAsync(request);
+            var response = _mapper.Map<UserResponseDto>(user);
+            return Ok(response);
+        }
+        catch (InvalidOperationException ex)
+        {
+            _logger.LogWarning(ex, "Ошибка проверки кода и регистрации");
+            return BadRequest(new { error = ex.Message });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Ошибка регистрации");
+            return StatusCode(500, new { error = "Ошибка регистрации" });
+        }
+    }
+
+    /// <summary>
+    /// Получение статистики реферальной программы
+    /// GET /api/v1/auth/referral-stats
+    /// </summary>
+    [HttpGet("referral-stats")]
+    [Authorize]
+    [ProducesResponseType(typeof(ReferralStatsResponseDto), StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status401Unauthorized)]
+    public async Task<ActionResult<ReferralStatsResponseDto>> GetReferralStats()
+    {
+        try
+        {
+            var userId = User.FindFirst("user_id")?.Value;
+            if (string.IsNullOrEmpty(userId))
+            {
+                return Unauthorized(new { error = "Неверный токен" });
+            }
+
+            var stats = await _authService.GetReferralStatsAsync(int.Parse(userId));
+            return Ok(stats);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Ошибка получения статистики реферальной программы");
+            return StatusCode(500, new { error = "Ошибка сервера" });
+        }
     }
 
     /// <summary>
