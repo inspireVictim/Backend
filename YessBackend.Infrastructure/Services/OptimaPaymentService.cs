@@ -58,6 +58,30 @@ public class OptimaPaymentService : IOptimaPaymentService
                 Result = OptimaResultCode.PaymentForbidden,
                 Comment = "Прием платежей отключен"
             };
+            
+            // Сохраняем запрос в PaymentProviderTransactions для сверки (требование QIWI OSMP)
+            try
+            {
+                await SaveProviderTransactionAsync(
+                    qid: txnId,
+                    operationType: "check",
+                    account: account.ToString(),
+                    amount: sum,
+                    status: "error",
+                    errorCode: ((int)responseDto.Result).ToString(),
+                    errorMessage: responseDto.Comment,
+                    ipAddress: ipAddress,
+                    userAgent: userAgent,
+                    rawRequest: rawRequest,
+                    rawResponse: null
+                );
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex, "Failed to save PaymentProviderTransaction for check request");
+            }
+            
+            return responseDto;
         }
 
         // Валидация суммы
@@ -123,7 +147,7 @@ public class OptimaPaymentService : IOptimaPaymentService
         if (wallet == null)
         {
             _logger.LogWarning("Wallet not found for user: Account={Account}", account);
-            return new OptimaPaymentResponseDto
+            responseDto = new OptimaPaymentResponseDto
             {
                 OsmpTxnId = txnId,
                 Sum = sum,
@@ -131,7 +155,8 @@ public class OptimaPaymentService : IOptimaPaymentService
                 Comment = "Кошелек не найден"
             };
         }
-
+        else
+        {
             _logger.LogInformation("Optima check successful: Account={Account}, TxnId={TxnId}, Sum={Sum}", 
                 account, txnId, sum);
 
