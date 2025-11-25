@@ -308,33 +308,85 @@ app.MapGet("/health/db", async (ApplicationDbContext db) =>
 using (var scope = app.Services.CreateScope())
 {
     var services = scope.ServiceProvider;
+    var logger = services.GetRequiredService<ILogger<Program>>();
+    
     try
     {
-        var dbContext = services.GetRequiredService<ApplicationDbContext>();
-        var logger = services.GetRequiredService<ILogger<Program>>();
+        // Проверяем, включено ли автоматическое применение миграций
+        var autoMigrate = configuration.GetValue<bool>("Database:AutoMigrate", true);
         
-        // Проверяем, есть ли ожидающие миграции
-        var pendingMigrations = await dbContext.Database.GetPendingMigrationsAsync();
-        if (pendingMigrations.Any())
+        if (!autoMigrate)
         {
-            logger.LogInformation("Применение {Count} ожидающих миграций...", pendingMigrations.Count());
-            foreach (var migration in pendingMigrations)
-            {
-                logger.LogInformation("  - {Migration}", migration);
-            }
-            
-            // Применяем все ожидающие миграции
-            await dbContext.Database.MigrateAsync();
-            logger.LogInformation("Миграции успешно применены.");
+            logger.LogInformation("Автоматическое применение миграций отключено в конфигурации.");
         }
         else
         {
-            logger.LogInformation("База данных актуальна, ожидающих миграций нет.");
+            var dbContext = services.GetRequiredService<ApplicationDbContext>();
+            var migrationTimeout = configuration.GetValue<int>("Database:MigrationTimeoutSeconds", 60);
+            
+            // Проверяем подключение к базе данных
+            logger.LogInformation("Проверка подключения к базе данных...");
+            var canConnect = await dbContext.Database.CanConnectAsync();
+            
+            if (!canConnect)
+            {
+                logger.LogWarning("Не удалось подключиться к базе данных. Миграции не будут применены.");
+                if (app.Environment.IsDevelopment())
+                {
+                    throw new InvalidOperationException("Не удалось подключиться к базе данных. Проверьте строку подключения.");
+                }
+            }
+            else
+            {
+                logger.LogInformation("Подключение к базе данных установлено.");
+                
+                // Получаем список ожидающих миграций
+                var pendingMigrations = await dbContext.Database.GetPendingMigrationsAsync();
+                var appliedMigrations = await dbContext.Database.GetAppliedMigrationsAsync();
+                
+                logger.LogInformation("Текущие миграции в БД: {Count}", appliedMigrations.Count());
+                
+                if (pendingMigrations.Any())
+                {
+                    logger.LogInformation("Найдено {Count} ожидающих миграций:", pendingMigrations.Count());
+                    foreach (var migration in pendingMigrations)
+                    {
+                        logger.LogInformation("  → {Migration}", migration);
+                    }
+                    
+                    logger.LogInformation("Применение миграций (таймаут: {Timeout} секунд)...", migrationTimeout);
+                    
+                    // Применяем все ожидающие миграции с таймаутом
+                    using (var cts = new CancellationTokenSource(TimeSpan.FromSeconds(migrationTimeout)))
+                    {
+                        await dbContext.Database.MigrateAsync(cts.Token);
+                    }
+                    
+                    logger.LogInformation("✅ Все миграции успешно применены.");
+                    
+                    // Проверяем, что миграции действительно применены
+                    var stillPending = await dbContext.Database.GetPendingMigrationsAsync();
+                    if (stillPending.Any())
+                    {
+                        logger.LogWarning("⚠️ Внимание: после применения миграций остались ожидающие: {Migrations}", 
+                            string.Join(", ", stillPending));
+                    }
+                    else
+                    {
+                        logger.LogInformation("✅ База данных полностью актуальна.");
+                    }
+                }
+                else
+                {
+                    logger.LogInformation("✅ База данных актуальна, ожидающих миграций нет.");
+                }
+            }
         }
 
         // Seed тестового пользователя для мобильного клиента
         try
         {
+            var dbContext = services.GetRequiredService<ApplicationDbContext>();
             var authService = services.GetRequiredService<IAuthService>();
             const string testPhone = "+996504876087";
             const string testPassword = "123456";
@@ -387,7 +439,6 @@ using (var scope = app.Services.CreateScope())
     }
     catch (Exception ex)
     {
-        var logger = services.GetRequiredService<ILogger<Program>>();
         logger.LogError(ex, "Ошибка при применении миграций базы данных.");
         // В Development режиме выбрасываем исключение, чтобы увидеть проблему
         if (app.Environment.IsDevelopment())
