@@ -20,6 +20,15 @@ var builder = WebApplication.CreateBuilder(args);
 // В Docker контейнере используется ASPNETCORE_URLS=http://+:8000
 builder.WebHost.ConfigureKestrel(options =>
 {
+    // Настройка многопоточности для поддержки 10-15 одновременных соединений (требование QIWI OSMP v1.4)
+    var maxConcurrentConnections = builder.Configuration.GetValue<int>("Kestrel:Limits:MaxConcurrentConnections", 15);
+    options.Limits.MaxConcurrentConnections = maxConcurrentConnections;
+    options.Limits.MaxConcurrentUpgradedConnections = maxConcurrentConnections;
+    
+    // Таймаут для запросов: 60 секунд (требование QIWI OSMP v1.4)
+    options.Limits.KeepAliveTimeout = TimeSpan.FromSeconds(60);
+    options.Limits.RequestHeadersTimeout = TimeSpan.FromSeconds(60);
+    
     // В Production режиме проверяем наличие сертификата для HTTPS
     if (!builder.Environment.IsDevelopment())
     {
@@ -207,6 +216,11 @@ builder.Services.AddScoped<IAchievementService, YessBackend.Infrastructure.Servi
 builder.Services.AddScoped<IPromotionService, YessBackend.Infrastructure.Services.PromotionService>();
 builder.Services.AddScoped<IBankService, YessBackend.Infrastructure.Services.BankService>();
 builder.Services.AddScoped<YessBackend.Application.Services.IOptimaPaymentService, YessBackend.Infrastructure.Services.OptimaPaymentService>();
+builder.Services.AddScoped<YessBackend.Application.Services.IEmailService, YessBackend.Infrastructure.Services.EmailService>();
+builder.Services.AddScoped<YessBackend.Application.Services.IReconciliationService, YessBackend.Infrastructure.Services.ReconciliationService>();
+
+// Background Service для ежедневной сверки
+builder.Services.AddHostedService<YessBackend.Infrastructure.Services.ReconciliationBackgroundService>();
 
 var app = builder.Build();
 

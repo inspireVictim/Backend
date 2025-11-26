@@ -62,6 +62,9 @@ public class ApplicationDbContext : DbContext
     public DbSet<PaymentMethod> PaymentMethods { get; set; }
     public DbSet<PaymentAnalytics> PaymentAnalytics { get; set; }
     
+    // Reconciliation Reports
+    public DbSet<ReconciliationReport> ReconciliationReports { get; set; }
+    
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
