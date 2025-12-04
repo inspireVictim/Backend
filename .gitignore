@@ -113,3 +113,19 @@ ScaffoldingReadMe.txt
 uploads/
 *.db
 *.sqlite
+
+# SSL Certificates and keys (security sensitive)
+*.pfx
+*.pem
+*.key
+*.crt
+*.cer
+certs/
+ssl/
+*.p12
+*.jks
+
+# Production configuration files with secrets
+appsettings.Production.json
+appsettings.*.Production.json
+*.secrets.json

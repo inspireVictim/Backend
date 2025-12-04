@@ -1,0 +1,19 @@
+{
+  "Kestrel": {
+    "Certificates": {
+      "Default": {
+        "Path": "/etc/ssl/certs/yess-cert.pfx",
+        "Password": "REPLACE_WITH_YOUR_CERTIFICATE_PASSWORD"
+      }
+    }
+  },
+  
+  "ConnectionStrings": {
+    "DefaultConnection": "Host=your_host;Port=5432;Database=yess_db;Username=yess_user;Password=your_production_password"
+  },
+  
+  "Jwt": {
+    "SecretKey": "REPLACE_WITH_STRONG_RANDOM_SECRET_KEY_MINIMUM_32_CHARS"
+  }
+}
+

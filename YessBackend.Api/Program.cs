@@ -29,20 +29,35 @@ builder.WebHost.ConfigureKestrel(options =>
     options.Limits.KeepAliveTimeout = TimeSpan.FromSeconds(60);
     options.Limits.RequestHeadersTimeout = TimeSpan.FromSeconds(60);
     
-    // В Production режиме проверяем наличие сертификата для HTTPS
-    if (!builder.Environment.IsDevelopment())
+    // Проверяем наличие сертификата для HTTPS (работает в Development и Production)
+    // Поддерживаем переменные окружения для безопасности (приоритет выше, чем appsettings.json)
+    var certPath = Environment.GetEnvironmentVariable("SSL_CERT_PATH") 
+        ?? builder.Configuration["Kestrel:Certificates:Default:Path"];
+    var certPassword = Environment.GetEnvironmentVariable("SSL_CERT_PASSWORD") 
+        ?? builder.Configuration["Kestrel:Certificates:Default:Password"];
+    
+    if (!string.IsNullOrEmpty(certPath) && System.IO.File.Exists(certPath))
     {
-        var certPath = builder.Configuration["Kestrel:Certificates:Default:Path"];
-        var certPassword = builder.Configuration["Kestrel:Certificates:Default:Password"];
-        
         // Если сертификат указан и существует - добавляем HTTPS на порт 8443
-        if (!string.IsNullOrEmpty(certPath) && System.IO.File.Exists(certPath))
+        options.Listen(IPAddress.Any, 8443, listenOptions =>
         {
-            options.Listen(IPAddress.Any, 8443, listenOptions =>
+            if (!string.IsNullOrEmpty(certPassword))
             {
                 listenOptions.UseHttps(new System.Security.Cryptography.X509Certificates.X509Certificate2(certPath, certPassword));
-            });
-        }
+            }
+            else
+            {
+                listenOptions.UseHttps(new System.Security.Cryptography.X509Certificates.X509Certificate2(certPath));
+            }
+        });
+    }
+    else if (builder.Environment.IsDevelopment())
+    {
+        // В Development режиме используем встроенный dev сертификат (если сертификат не указан)
+        options.Listen(IPAddress.Any, 8443, listenOptions =>
+        {
+            listenOptions.UseHttps(); // Использует dev сертификат ASP.NET Core
+        });
     }
 });
 
