@@ -332,7 +332,7 @@ if (enableSwagger)
 }
 
 // HTTPS Redirection настраивается только если HTTPS endpoint успешно загружен
-var logger = app.Services.GetRequiredService<ILogger<Program>>();
+var httpsLogger = app.Services.GetRequiredService<ILogger<Program>>();
 
 if (httpsAvailable)
 {
@@ -342,16 +342,16 @@ if (httpsAvailable)
     if (!app.Environment.IsDevelopment())
     {
         app.UseHsts();
-        logger.LogInformation("HTTPS Redirection и HSTS включены");
+        httpsLogger.LogInformation("HTTPS Redirection и HSTS включены");
     }
     else
     {
-        logger.LogInformation("HTTPS Redirection включён для Development");
+        httpsLogger.LogInformation("HTTPS Redirection включён для Development");
     }
 }
 else
 {
-    logger.LogWarning("HTTPS недоступен, редирект отключен");
+    httpsLogger.LogWarning("HTTPS недоступен, редирект отключен");
 }
 
 // Глобальный обработчик исключений (после Swagger, чтобы не перехватывать ошибки генерации документации)
