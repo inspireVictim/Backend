@@ -297,6 +297,30 @@ builder.Services.AddScoped<IPaymentProviderService, YessBackend.Infrastructure.S
 builder.Services.AddScoped<INotificationService, YessBackend.Infrastructure.Services.NotificationService>();
 builder.Services.AddScoped<IAchievementService, YessBackend.Infrastructure.Services.AchievementService>();
 builder.Services.AddScoped<IPromotionService, YessBackend.Infrastructure.Services.PromotionService>();
+
+// Finik Payment Service Configuration
+builder.Services.Configure<YessBackend.Application.Config.FinikPaymentConfig>(
+    builder.Configuration.GetSection("FinikPayment"));
+
+// Register HttpClient for Finik
+builder.Services.AddHttpClient("Finik", (sp, client) =>
+{
+    var config = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<YessBackend.Application.Config.FinikPaymentConfig>>().Value;
+    client.BaseAddress = new Uri(config.ApiBaseUrl);
+    client.Timeout = TimeSpan.FromSeconds(config.RequestTimeoutSeconds);
+});
+
+// Register FinikService as scoped (needs ApplicationDbContext)
+builder.Services.AddScoped<YessBackend.Application.Services.IFinikService>(sp =>
+{
+    var httpClientFactory = sp.GetRequiredService<IHttpClientFactory>();
+    var httpClient = httpClientFactory.CreateClient("Finik");
+    var config = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<YessBackend.Application.Config.FinikPaymentConfig>>();
+    var context = sp.GetRequiredService<YessBackend.Infrastructure.Data.ApplicationDbContext>();
+    var logger = sp.GetRequiredService<ILogger<YessBackend.Infrastructure.Services.FinikService>>();
+    
+    return new YessBackend.Infrastructure.Services.FinikService(httpClient, config, context, logger);
+});
 builder.Services.AddScoped<IBankService, YessBackend.Infrastructure.Services.BankService>();
 builder.Services.AddScoped<YessBackend.Application.Services.IOptimaPaymentService, YessBackend.Infrastructure.Services.OptimaPaymentService>();
 builder.Services.AddScoped<YessBackend.Application.Services.IEmailService, YessBackend.Infrastructure.Services.EmailService>();
