@@ -1,8 +1,8 @@
-# Используем официальный образ .NET 8 SDK для сборки
+# Stage 1: build
 FROM mcr.microsoft.com/dotnet/sdk:8.0 AS build
 WORKDIR /src
 
-# Копируем файлы проекта
+# Копируем csproj файлы
 COPY ["YessBackend.Api/YessBackend.Api.csproj", "YessBackend.Api/"]
 COPY ["YessBackend.Application/YessBackend.Application.csproj", "YessBackend.Application/"]
 COPY ["YessBackend.Domain/YessBackend.Domain.csproj", "YessBackend.Domain/"]
@@ -14,37 +14,32 @@ RUN dotnet restore "YessBackend.Api/YessBackend.Api.csproj"
 # Копируем весь код
 COPY . .
 
-# Собираем проект
+# Сборка и публикация
 WORKDIR "/src/YessBackend.Api"
 RUN dotnet build "YessBackend.Api.csproj" -c Release -o /app/build
-
-# Публикуем проект
 RUN dotnet publish "YessBackend.Api.csproj" -c Release -o /app/publish /p:UseAppHost=false
 
-# Используем runtime образ для production
+# Stage 2: runtime
 FROM mcr.microsoft.com/dotnet/aspnet:8.0 AS runtime
 WORKDIR /app
 
-# Устанавливаем необходимые пакеты для работы с PostgreSQL
-RUN apt-get update && apt-get install -y \
-    libpq-dev \
-    && rm -rf /var/lib/apt/lists/*
+# Установка libpq для PostgreSQL
+RUN apt-get update && apt-get install -y libpq-dev && rm -rf /var/lib/apt/lists/*
 
 # Копируем опубликованное приложение
 COPY --from=build /app/publish .
 
-# Создаем папку для загрузок
+# Копируем сертификаты
+COPY certs /app/certs
+
+# Папка для загрузок
 RUN mkdir -p /app/uploads && chmod 777 /app/uploads
 
-# Открываем порты (HTTP и HTTPS)
-# HTTP на 5000 (внутренний) → 8000 (внешний)
-# HTTPS на 5001 (внутренний) → 8443 (внешний)
+# Открываем порты
 EXPOSE 5000
 EXPOSE 5001
 
-# Устанавливаем переменные окружения
-# HTTPS настраивается через переменные окружения или конфигурацию Kestrel в Program.cs
 ENV ASPNETCORE_ENVIRONMENT=Production
 
-# Запускаем приложение
+# Запуск приложения
 ENTRYPOINT ["dotnet", "YessBackend.Api.dll"]
