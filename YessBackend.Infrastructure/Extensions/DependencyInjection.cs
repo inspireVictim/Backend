@@ -56,6 +56,7 @@ public static class DependencyInjection
 
         // Optima / Finik
         services.AddScoped<IOptimaPaymentService, OptimaPaymentService>();
+        services.AddScoped<YessBackend.Application.Services.IFinikService, FinikService>();
         services.AddScoped<IEmailService, EmailService>();
         services.AddScoped<IReconciliationService, ReconciliationService>();
 

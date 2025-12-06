@@ -13,7 +13,16 @@ public interface IFinikService
 
     Task<FinikWebhookDto> GetPaymentStatusAsync(string paymentId);
 
-    bool VerifyWebhookSignature(string payload, string signature);
+    /// <summary>
+    /// Проверяет RSA подпись webhook от Finik
+    /// </summary>
+    bool VerifyWebhookSignature(
+        string method,
+        string absolutePath,
+        Dictionary<string, string> headers,
+        Dictionary<string, string> queryParams,
+        string jsonBody,
+        string signature);
 
     Task<bool> ProcessWebhookAsync(FinikWebhookDto webhook);
 }

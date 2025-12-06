@@ -1,33 +1,52 @@
 using System.Text.Json.Serialization;
+using System.Text.Json;
 
 namespace YessBackend.Application.DTOs.FinikPayment;
 
+/// <summary>
+/// Модель webhook от Finik Payments
+/// </summary>
 public class FinikWebhookDto
 {
-    [JsonPropertyName("payment_id")]
-    public string PaymentId { get; set; } = string.Empty;
+    [JsonPropertyName("id")]
+    public string? Id { get; set; }
 
-    [JsonPropertyName("order_id")]
-    public int? OrderId { get; set; }
-
-    [JsonPropertyName("status")]
-    public string Status { get; set; } = string.Empty;
+    [JsonPropertyName("accountId")]
+    public string? AccountId { get; set; }
 
     [JsonPropertyName("amount")]
     public decimal? Amount { get; set; }
 
-    [JsonPropertyName("currency")]
-    public string? Currency { get; set; }
+    [JsonPropertyName("fields")]
+    public JsonElement? Fields { get; set; }
 
-    [JsonPropertyName("created_at")]
-    public DateTime? CreatedAt { get; set; }
+    [JsonPropertyName("item")]
+    public JsonElement? Item { get; set; }
 
-    [JsonPropertyName("updated_at")]
-    public DateTime? UpdatedAt { get; set; }
+    [JsonPropertyName("net")]
+    public decimal? Net { get; set; }
 
-    [JsonPropertyName("paid_at")]
-    public DateTime? PaidAt { get; set; }
+    [JsonPropertyName("receiptNumber")]
+    public string? ReceiptNumber { get; set; }
 
-    [JsonPropertyName("signature")]
-    public string? Signature { get; set; }
+    [JsonPropertyName("requestDate")]
+    public long? RequestDate { get; set; }
+
+    [JsonPropertyName("service")]
+    public JsonElement? Service { get; set; }
+
+    [JsonPropertyName("status")]
+    public string? Status { get; set; }
+
+    [JsonPropertyName("transactionDate")]
+    public long? TransactionDate { get; set; }
+
+    [JsonPropertyName("transactionId")]
+    public string? TransactionId { get; set; }
+
+    [JsonPropertyName("transactionType")]
+    public string? TransactionType { get; set; }
+
+    [JsonPropertyName("data")]
+    public JsonElement? Data { get; set; }
 }

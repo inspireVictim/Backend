@@ -79,8 +79,8 @@ public class FinikPaymentService : IFinikPaymentService
     public async Task<bool> ProcessWebhookAsync(FinikWebhookDto webhook)
     {
         // Пока просто логируем — можно добавить обновление заказа
-        _logger.LogInformation("Finik webhook: {PaymentId} status={Status}",
-            webhook.PaymentId, webhook.Status);
+        _logger.LogInformation("Finik webhook: {TransactionId} status={Status}",
+            webhook.TransactionId, webhook.Status);
 
         return true;
     }
