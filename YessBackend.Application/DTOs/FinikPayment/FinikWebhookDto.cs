@@ -1,5 +1,4 @@
 using System.Text.Json.Serialization;
-using System.Text.Json;
 
 namespace YessBackend.Application.DTOs.FinikPayment;
 
@@ -9,35 +8,35 @@ namespace YessBackend.Application.DTOs.FinikPayment;
 public class FinikWebhookDto
 {
     [JsonPropertyName("id")]
-    public string? Id { get; set; }
+    public string Id { get; set; } = string.Empty;
 
     [JsonPropertyName("transactionId")]
-    public string? TransactionId { get; set; }
+    public string TransactionId { get; set; } = string.Empty;
 
     [JsonPropertyName("status")]
-    public string? Status { get; set; } // "SUCCEEDED" or "FAILED"
+    public string Status { get; set; } = string.Empty; // "SUCCEEDED" or "FAILED"
 
     [JsonPropertyName("amount")]
-    public decimal? Amount { get; set; }
+    public decimal Amount { get; set; }
 
     [JsonPropertyName("net")]
-    public decimal? Net { get; set; }
+    public decimal Net { get; set; }
 
     [JsonPropertyName("accountId")]
-    public string? AccountId { get; set; }
+    public string AccountId { get; set; } = string.Empty;
 
     [JsonPropertyName("fields")]
-    public JsonElement? Fields { get; set; }
+    public Dictionary<string, object>? Fields { get; set; }
 
     [JsonPropertyName("requestDate")]
-    public long? RequestDate { get; set; }
+    public long RequestDate { get; set; }
 
     [JsonPropertyName("transactionDate")]
-    public long? TransactionDate { get; set; }
+    public long TransactionDate { get; set; }
 
     [JsonPropertyName("transactionType")]
-    public string? TransactionType { get; set; } // "DEBIT" or "CREDIT"
+    public string TransactionType { get; set; } = string.Empty; // "DEBIT" or "CREDIT"
 
     [JsonPropertyName("receiptNumber")]
-    public string? ReceiptNumber { get; set; }
+    public string ReceiptNumber { get; set; } = string.Empty;
 }

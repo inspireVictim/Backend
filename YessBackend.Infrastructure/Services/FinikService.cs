@@ -128,35 +128,17 @@ tQIDAQAB
                 return false;
             }
 
-            // Извлекаем order ID из external_id в fields или data
+            // Извлекаем order ID из external_id в fields
             int? orderId = null;
             
-            if (webhook.Fields.HasValue)
+            if (webhook.Fields != null)
             {
-                var fields = webhook.Fields.Value;
-                if (fields.TryGetProperty("external_id", out var externalId))
+                if (webhook.Fields.TryGetValue("external_id", out var externalIdObj))
                 {
-                    if (externalId.ValueKind == JsonValueKind.String)
+                    var externalId = externalIdObj?.ToString();
+                    if (!string.IsNullOrEmpty(externalId) && int.TryParse(externalId, out var parsedOrderId))
                     {
-                        if (int.TryParse(externalId.GetString(), out var parsedOrderId))
-                        {
-                            orderId = parsedOrderId;
-                        }
-                    }
-                }
-            }
-
-            if (!orderId.HasValue && webhook.Data.HasValue)
-            {
-                var data = webhook.Data.Value;
-                if (data.TryGetProperty("external_id", out var externalId))
-                {
-                    if (externalId.ValueKind == JsonValueKind.String)
-                    {
-                        if (int.TryParse(externalId.GetString(), out var parsedOrderId))
-                        {
-                            orderId = parsedOrderId;
-                        }
+                        orderId = parsedOrderId;
                     }
                 }
             }
@@ -341,9 +323,9 @@ tQIDAQAB
         order.PaymentMethod = "finik";
 
         // Устанавливаем дату оплаты
-        if (webhook.TransactionDate.HasValue)
+        if (webhook.TransactionDate > 0)
         {
-            var timestamp = DateTimeOffset.FromUnixTimeMilliseconds(webhook.TransactionDate.Value).DateTime;
+            var timestamp = DateTimeOffset.FromUnixTimeMilliseconds(webhook.TransactionDate).DateTime;
             order.PaidAt = timestamp;
         }
         else
@@ -363,7 +345,7 @@ tQIDAQAB
                 OrderId = orderId,
                 PartnerId = order.PartnerId,
                 Type = "payment",
-                Amount = webhook.Amount ?? order.FinalAmount,
+                Amount = webhook.Amount > 0 ? webhook.Amount : order.FinalAmount,
                 PaymentMethod = "finik",
                 GatewayTransactionId = webhook.TransactionId,
                 Status = "completed",
