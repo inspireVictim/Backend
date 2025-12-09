@@ -1,7 +1,7 @@
 namespace YessBackend.Application.Config;
 
 /// <summary>
-/// Конфигурация для интеграции с Finik платежным провайдером
+/// Конфигурация для интеграции с Finik Acquiring API
 /// </summary>
 public class FinikPaymentConfig
 {
@@ -11,29 +11,57 @@ public class FinikPaymentConfig
     public bool Enabled { get; set; } = true;
 
     /// <summary>
-    /// Client ID от Finik
+    /// API Key от Finik (x-api-key)
     /// </summary>
-    public string ClientId { get; set; } = string.Empty;
+    public string ApiKey { get; set; } = string.Empty;
 
     /// <summary>
-    /// Client Secret от Finik (хранится в переменных окружения или appsettings.Production.json)
-    /// </summary>
-    public string ClientSecret { get; set; } = string.Empty;
-
-    /// <summary>
-    /// Account ID от Finik
+    /// Account ID от Finik (accountId в Data объекте)
     /// </summary>
     public string AccountId { get; set; } = string.Empty;
 
     /// <summary>
-    /// Базовый URL API Finik
+    /// Приватный ключ в формате PEM для подписи запросов
     /// </summary>
-    public string ApiBaseUrl { get; set; } = "https://api.finik.kg";
+    public string PrivateKeyPem { get; set; } = string.Empty;
 
     /// <summary>
-    /// URL для callback/webhook от Finik
+    /// Публичный ключ Finik в формате PEM для проверки webhook
+    /// Если не указан, используется публичный ключ из документации (prod/beta)
     /// </summary>
-    public string CallbackUrl { get; set; } = string.Empty;
+    public string? FinikPublicKeyPem { get; set; }
+
+    /// <summary>
+    /// Окружение: "production" или "beta"
+    /// </summary>
+    public string Environment { get; set; } = "production";
+
+    /// <summary>
+    /// Базовый URL API Finik
+    /// Production: https://api.acquiring.averspay.kg
+    /// Beta: https://beta.api.acquiring.averspay.kg
+    /// </summary>
+    public string ApiBaseUrl { get; set; } = "https://api.acquiring.averspay.kg";
+
+    /// <summary>
+    /// URL для webhook от Finik
+    /// </summary>
+    public string WebhookUrl { get; set; } = string.Empty;
+
+    /// <summary>
+    /// URL для редиректа после успешной оплаты
+    /// </summary>
+    public string RedirectUrl { get; set; } = string.Empty;
+
+    /// <summary>
+    /// Merchant Category Code (MCC)
+    /// </summary>
+    public string MerchantCategoryCode { get; set; } = "0742";
+
+    /// <summary>
+    /// Название QR кода (name_en)
+    /// </summary>
+    public string QrName { get; set; } = "Yess Payment";
 
     /// <summary>
     /// Таймаут запросов к API Finik (в секундах)
@@ -44,5 +72,10 @@ public class FinikPaymentConfig
     /// Включена ли проверка подписи webhook
     /// </summary>
     public bool VerifySignature { get; set; } = true;
+
+    /// <summary>
+    /// Допустимое отклонение timestamp в миллисекундах (по умолчанию 5 минут)
+    /// </summary>
+    public long TimestampSkewMs { get; set; } = 300000; // 5 minutes
 }
 

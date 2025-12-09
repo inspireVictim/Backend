@@ -4,11 +4,13 @@ namespace YessBackend.Application.Interfaces.Payments;
 
 public interface IFinikPaymentService
 {
-    Task<FinikPaymentResponseDto> CreatePaymentAsync(FinikPaymentRequestDto request);
+    /// <summary>
+    /// Создает платеж через Finik Acquiring API
+    /// </summary>
+    Task<FinikCreatePaymentResponseDto> CreatePaymentAsync(FinikCreatePaymentRequestDto request);
 
-    // Получение статуса платежа
-    Task<FinikWebhookDto> GetPaymentStatusAsync(string paymentId);
-
-    // Обработка вебхука Finik
-    Task<bool> ProcessWebhookAsync(FinikWebhookDto webhook);
+    /// <summary>
+    /// Получает публичный ключ Finik для проверки подписи
+    /// </summary>
+    string GetFinikPublicKey();
 }

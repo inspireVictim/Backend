@@ -30,8 +30,18 @@ var configuration = builder.Configuration;
 builder.Services.Configure<FinikPaymentConfig>(
     configuration.GetSection("FinikPayment"));
 
-// Используем FinikPaymentService — корректное имя класса
-builder.Services.AddHttpClient<IFinikPaymentService, FinikPaymentService>();
+// Регистрируем FinikSignatureService
+builder.Services.AddScoped<YessBackend.Application.Interfaces.Payments.IFinikSignatureService, 
+    YessBackend.Infrastructure.Services.FinikSignatureService>();
+
+// Регистрируем FinikPaymentService с HttpClient
+// Настройка HttpClientHandler для отключения автоматического следования за redirect
+builder.Services.AddHttpClient<YessBackend.Application.Interfaces.Payments.IFinikPaymentService, 
+    YessBackend.Infrastructure.Services.FinikPaymentService>()
+    .ConfigurePrimaryHttpMessageHandler(() => new HttpClientHandler
+    {
+        AllowAutoRedirect = false // Не следовать автоматически за redirect (важно для получения Location header)
+    });
 
 // =======================
 //       Controllers

@@ -1,0 +1,87 @@
+{
+  "info": {
+    "name": "Finik Payment Test",
+    "_postman_id": "82d1d653-f67c-4d57-9e75-9f4e8c88e002",
+    "description": "Collection for testing Finik payments and webhook handling",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "1️⃣ Create Payment (Finik API)",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Client-Id",
+            "value": "{{ClientId}}"
+          },
+          {
+            "key": "Client-Secret",
+            "value": "{{ClientSecret}}"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"amount\": 100,\n  \"accountId\": \"{{AccountId}}\",\n  \"fields\": {\n    \"fieldId1\": \"value1\",\n    \"fieldId2\": \"value2\"\n  },\n  \"callbackUrl\": \"https://yessgo.org/api/v1/payment/finik/webhook\"\n}"
+        },
+        "url": {
+          "raw": "{{FinikApiBaseUrl}}/payment/create",
+          "host": ["{{FinikApiBaseUrl}}"],
+          "path": ["payment", "create"]
+        }
+      }
+    },
+    {
+      "name": "2️⃣ Webhook → Your Backend",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "signature",
+            "value": "{{FakeSignature}}"
+          },
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n \"id\": \"transaction-id-15423_CREDIT\",\n \"accountId\": \"{{AccountId}}\",\n \"amount\": 100,\n \"fields\": {\n  \"amount\": 100,\n  \"fieldId1\": \"value1\",\n  \"fieldId2\": \"value2\"\n },\n \"item\": {\"id\": \"generated-item-id\"},\n \"net\": 100,\n \"receiptNumber\": \"test-receipt\",\n \"requestDate\": 1737369012345,\n \"service\": {\"id\": \"averspay-items\"},\n \"status\": \"SUCCEEDED\",\n \"transactionDate\": 1737369012345,\n \"transactionId\": \"transaction-id-241234\",\n \"transactionType\": \"DEBIT\",\n \"data\": {\n  \"amount\": 100,\n  \"fieldId1\": \"value1\",\n  \"fieldId2\": \"value2\"\n }\n}"
+        },
+        "url": {
+          "raw": "https://yessgo.org/api/v1/payment/finik/webhook",
+          "protocol": "https",
+          "host": ["yessgo", "org"],
+          "path": ["api", "v1", "payment", "finik", "webhook"]
+        }
+      }
+    }
+  ],
+  "variable": [
+    {
+      "key": "ClientId",
+      "value": "YOUR_CLIENT_ID"
+    },
+    {
+      "key": "ClientSecret",
+      "value": "YOUR_CLIENT_SECRET"
+    },
+    {
+      "key": "AccountId",
+      "value": "YOUR_ACCOUNT_ID"
+    },
+    {
+      "key": "FinikApiBaseUrl",
+      "value": "https://api.finik.kg"
+    },
+    {
+      "key": "FakeSignature",
+      "value": "test123signature"
+    }
+  ]
+}

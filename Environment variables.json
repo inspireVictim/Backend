@@ -1,0 +1,76 @@
+// Environment variables
+const accessKey = pm.environment.get("client_id");
+const secretKey = pm.environment.get("client_secret");
+const host = pm.environment.get("api_host");
+const method = pm.request.method;
+const service = "finik";
+const region = "eu-central-1";
+
+const endpoint = pm.request.url.getPath();
+
+// ISO8601 timestamp
+function getAmzDate() {
+    let now = new Date();
+    return now.toISOString().replace(/[:-]|\.\d{3}/g, '') + "Z";
+}
+
+const amzDate = getAmzDate();
+const dateStamp = amzDate.substring(0, 8);
+
+// BODY HASH
+let body = "";
+if (pm.request.body && pm.request.body.raw) {
+    body = pm.request.body.raw;
+}
+
+const payloadHash = CryptoJS.SHA256(body).toString();
+
+// CANONICAL HEADERS
+const canonicalHeaders =
+    "content-type:application/json\n" +
+    "host:" + host + "\n" +
+    "x-amz-date:" + amzDate + "\n";
+
+const signedHeaders = "content-type;host;x-amz-date";
+
+// Canonical request
+const canonicalRequest =
+    method + "\n" +
+    endpoint + "\n" +
+    "" + "\n" + 
+    canonicalHeaders + "\n" +
+    signedHeaders + "\n" +
+    payloadHash;
+
+// String to sign
+const credentialScope = dateStamp + "/" + region + "/" + service + "/aws4_request";
+
+const stringToSign =
+    "AWS4-HMAC-SHA256\n" +
+    amzDate + "\n" +
+    credentialScope + "\n" +
+    CryptoJS.SHA256(canonicalRequest).toString();
+
+// Signing helpers
+function sign(key, data) {
+    return CryptoJS.HmacSHA256(data, key);
+}
+
+const kDate = sign("AWS4" + secretKey, dateStamp);
+const kRegion = sign(kDate, region);
+const kService = sign(kRegion, service);
+const kSigning = sign(kService, "aws4_request");
+
+const signature = CryptoJS.HmacSHA256(stringToSign, kSigning).toString();
+
+// Authorization header
+const authHeader =
+    "AWS4-HMAC-SHA256 " +
+    "Credential=" + accessKey + "/" + credentialScope + ", " +
+    "SignedHeaders=" + signedHeaders + ", " +
+    "Signature=" + signature;
+
+// ADD HEADERS
+pm.request.headers.add({ key: "Authorization", value: authHeader });
+pm.request.headers.add({ key: "X-Amz-Date", value: amzDate });
+pm.request.headers.add({ key: "Content-Type", value: "application/json" });

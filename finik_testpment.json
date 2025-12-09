@@ -1,0 +1,191 @@
+{
+  "info": {
+    "_postman_id": "f1b2c56d-8c61-4f28-b8dc-finik-acquiring",
+    "name": "Finik Acquiring API",
+    "description": "Fully automated AWS Signature V4 signing for Finik Acquiring API",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "item": [
+    {
+      "name": "Create Payment",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "exec": [
+              "const crypto = require('crypto');",
+              "",
+              "const accessKey = pm.environment.get('client_id');",
+              "const secretKey = pm.environment.get('client_secret');",
+              "",
+              "const method = pm.request.method;",
+              "const service = 'finik';",
+              "const host = pm.environment.get('api_host');",
+              "const region = 'eu-central-1';",
+              "",
+              "const endpoint = pm.request.url.getPath();",
+              "const body = pm.request.body ? pm.request.body.raw || '' : '';",
+              "",
+              "const amzDate = new Date().toISOString().replace(/[:-]|\\.\\d{3}/g, '') + 'Z';",
+              "const dateStamp = amzDate.substring(0, 8);",
+              "",
+              "const canonicalHeaders =",
+              "  'content-type:application/json\\n' +",
+              "  'host:' + host + '\\n' +",
+              "  'x-amz-date:' + amzDate + '\\n';",
+              "",
+              "const signedHeaders = 'content-type;host;x-amz-date';",
+              "",
+              "// Hash body",
+              "const payloadHash = crypto.createHash('sha256').update(body).digest('hex');",
+              "",
+              "// Canonical request",
+              "const canonicalRequest =",
+              "  method + '\\n' +",
+              "  endpoint + '\\n' +",
+              "  '' + '\\n' +",
+              "  canonicalHeaders + '\\n' +",
+              "  signedHeaders + '\\n' +",
+              "  payloadHash;",
+              "",
+              "// String to sign",
+              "const credentialScope = dateStamp + '/' + region + '/' + service + '/aws4_request';",
+              "",
+              "const stringToSign =",
+              "  'AWS4-HMAC-SHA256' + '\\n' +",
+              "  amzDate + '\\n' +",
+              "  credentialScope + '\\n' +",
+              "  crypto.createHash('sha256').update(canonicalRequest).digest('hex');",
+              "",
+              "// Signing keys",
+              "function sign(key, msg) {",
+              "  return crypto.createHmac('sha256', key).update(msg).digest();",
+              "}",
+              "",
+              "const kDate = sign('AWS4' + secretKey, dateStamp);",
+              "const kRegion = sign(kDate, region);",
+              "const kService = sign(kRegion, service);",
+              "const kSigning = sign(kService, 'aws4_request');",
+              "",
+              "const signature = crypto.createHmac('sha256', kSigning).update(stringToSign).digest('hex');",
+              "",
+              "// Authorization header",
+              "const authorizationHeader =",
+              "  'AWS4-HMAC-SHA256 ' +",
+              "  'Credential=' + accessKey + '/' + credentialScope + ', ' +",
+              "  'SignedHeaders=' + signedHeaders + ', ' +",
+              "  'Signature=' + signature;",
+              "",
+              "pm.request.headers.add({ key: 'Authorization', value: authorizationHeader });",
+              "pm.request.headers.add({ key: 'X-Amz-Date', value: amzDate });",
+              "pm.request.headers.add({ key: 'Content-Type', value: 'application/json' });"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "POST",
+        "header": [],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"accountId\": \"{{account_id}}\",\n  \"amount\": 100\n}"
+        },
+        "url": {
+          "raw": "https://{{api_host}}/payment/create",
+          "protocol": "https",
+          "host": ["{{api_host}}"],
+          "path": ["payment", "create"]
+        }
+      },
+      "response": []
+    },
+    {
+      "name": "Get Payment Status",
+      "event": [
+        {
+          "listen": "prerequest",
+          "script": {
+            "exec": [
+              "const crypto = require('crypto');",
+              "",
+              "const accessKey = pm.environment.get('client_id');",
+              "const secretKey = pm.environment.get('client_secret');",
+              "",
+              "const method = pm.request.method;",
+              "const service = 'finik';",
+              "const host = pm.environment.get('api_host');",
+              "const region = 'eu-central-1';",
+              "",
+              "const endpoint = pm.request.url.getPath();",
+              "",
+              "const amzDate = new Date().toISOString().replace(/[:-]|\\.\\d{3}/g, '') + 'Z';",
+              "const dateStamp = amzDate.substring(0, 8);",
+              "",
+              "const canonicalHeaders =",
+              "  'host:' + host + '\\n' +",
+              "  'x-amz-date:' + amzDate + '\\n';",
+              "",
+              "const signedHeaders = 'host;x-amz-date';",
+              "",
+              "// Canonical request",
+              "const canonicalRequest =",
+              "  method + '\\n' +",
+              "  endpoint + '\\n' +",
+              "  pm.request.url.getQueryString() + '\\n' +",
+              "  canonicalHeaders + '\\n' +",
+              "  signedHeaders + '\\n' +",
+              "  crypto.createHash('sha256').update('').digest('hex');",
+              "",
+              "// String to sign",
+              "const credentialScope = dateStamp + '/' + region + '/' + service + '/aws4_request';",
+              "",
+              "const stringToSign =",
+              "  'AWS4-HMAC-SHA256' + '\\n' +",
+              "  amzDate + '\\n' +",
+              "  credentialScope + '\\n' +",
+              "  crypto.createHash('sha256').update(canonicalRequest).digest('hex');",
+              "",
+              "// Signing keys",
+              "function sign(key, msg) {",
+              "  return crypto.createHmac('sha256', key).update(msg).digest();",
+              "}",
+              "",
+              "const kDate = sign('AWS4' + secretKey, dateStamp);",
+              "const kRegion = sign(kDate, region);",
+              "const kService = sign(kRegion, service);",
+              "const kSigning = sign(kService, 'aws4_request');",
+              "",
+              "const signature = crypto.createHmac('sha256', kSigning).update(stringToSign).digest('hex');",
+              "",
+              "// Authorization header",
+              "const authorizationHeader =",
+              "  'AWS4-HMAC-SHA256 ' +",
+              "  'Credential=' + accessKey + '/' + credentialScope + ', ' +",
+              "  'SignedHeaders=' + signedHeaders + ', ' +",
+              "  'Signature=' + signature;",
+              "",
+              "pm.request.headers.add({ key: 'Authorization', value: authorizationHeader });",
+              "pm.request.headers.add({ key: 'X-Amz-Date', value: amzDate });"
+            ],
+            "type": "text/javascript"
+          }
+        }
+      ],
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "https://{{api_host}}/payment/status?transactionId={{transaction_id}}",
+          "protocol": "https",
+          "host": ["{{api_host}}"],
+          "path": ["payment", "status"],
+          "query": [
+            { "key": "transactionId", "value": "{{transaction_id}}" }
+          ]
+        }
+      },
+      "response": []
+    }
+  ]
+}

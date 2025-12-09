@@ -1,0 +1,38 @@
+{
+  "id": "finik-env",
+  "name": "Finik Acquiring Environment",
+  "values": [
+    {
+      "key": "client_id",
+      "value": "54f8eb72-348b-4c4c-85d1-a02d1a37dc78",
+      "type": "text",
+      "enabled": true
+    },
+    {
+      "key": "client_secret",
+      "value": "fNijGemPQLGMP7QyPfvI2dtoDCUYIzJ4s59hS9wa",
+      "type": "text",
+      "enabled": true
+    },
+    {
+      "key": "api_host",
+      "value": "api.acquiring.averspay.kg",
+      "type": "text",
+      "enabled": true
+    },
+    {
+      "key": "account_id",
+      "value": "cc5a3231-2eec-4db2-9170-8b0cc3abeed3",
+      "type": "text",
+      "enabled": true
+    },
+    {
+      "key": "transaction_id",
+      "value": "",
+      "type": "text",
+      "enabled": true
+    }
+  ],
+  "_postman_variable_scope": "environment",
+  "_postman_exported_using": "Postman/10.21"
+}

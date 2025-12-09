@@ -1,197 +1,197 @@
 using System.Text;
 using System.Text.Json;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Extensions.Options;
+using YessBackend.Application.Config;
 using YessBackend.Application.DTOs.FinikPayment;
-using YessBackend.Application.Services;
+using YessBackend.Application.Interfaces.Payments;
+using YessBackend.Infrastructure.Data;
+using Microsoft.EntityFrameworkCore;
 
 namespace YessBackend.Api.Controllers.v1;
 
 /// <summary>
-/// Контроллер для обработки webhook от Finik Payments
+/// Контроллер для обработки webhook от Finik Acquiring API
 /// </summary>
 [ApiController]
-[Route("finik")]
-[Tags("Finik Webhook")]
+[Route("api/v1/webhooks")]
+[Tags("Webhooks")]
 public class FinikWebhookController : ControllerBase
 {
-    private readonly IFinikService _finikService;
+    private readonly IFinikPaymentService _finikPaymentService;
+    private readonly IFinikSignatureService _signatureService;
+    private readonly FinikPaymentConfig _config;
+    private readonly ApplicationDbContext _db;
     private readonly ILogger<FinikWebhookController> _logger;
 
     public FinikWebhookController(
-        IFinikService finikService,
+        IFinikPaymentService finikPaymentService,
+        IFinikSignatureService signatureService,
+        IOptions<FinikPaymentConfig> config,
+        ApplicationDbContext db,
         ILogger<FinikWebhookController> logger)
     {
-        _finikService = finikService;
+        _finikPaymentService = finikPaymentService;
+        _signatureService = signatureService;
+        _config = config.Value;
+        _db = db;
         _logger = logger;
     }
 
     /// <summary>
-    /// Webhook от Finik для уведомлений о статусе платежа
-    /// POST /finik/webhook
+    /// Обрабатывает webhook от Finik Acquiring API
+    /// POST /api/v1/webhooks/finik
     /// </summary>
-    [HttpPost("webhook")]
-    [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
+    [HttpPost("finik")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-    [ProducesResponseType(StatusCodes.Status500InternalServerError)]
-    public async Task<ActionResult> Webhook()
+    public async Task<IActionResult> HandleWebhook()
     {
         try
         {
-            // Включаем буферизацию для возможности повторного чтения Request.Body
+            // Читаем тело запроса для проверки подписи
             Request.EnableBuffering();
-
-            // Читаем raw body для проверки подписи
+            var bodyStream = new StreamReader(Request.Body, Encoding.UTF8, leaveOpen: true);
+            var bodyString = await bodyStream.ReadToEndAsync();
             Request.Body.Position = 0;
-            string rawBody;
-            using (var reader = new StreamReader(Request.Body, Encoding.UTF8, leaveOpen: true))
+
+            // Парсим JSON body
+            FinikWebhookDto? webhook;
+            try
             {
-                rawBody = await reader.ReadToEndAsync();
+                webhook = JsonSerializer.Deserialize<FinikWebhookDto>(bodyString, new JsonSerializerOptions
+                {
+                    PropertyNameCaseInsensitive = true
+                });
             }
-
-            // Сбрасываем позицию для повторного чтения
-            Request.Body.Position = 0;
-
-            // Парсим webhook
-            var webhook = JsonSerializer.Deserialize<FinikWebhookDto>(rawBody, new JsonSerializerOptions
+            catch (JsonException ex)
             {
-                PropertyNameCaseInsensitive = true
-            });
+                _logger.LogWarning(ex, "Не удалось распарсить JSON body webhook Finik");
+                return BadRequest(new { error = "Invalid JSON body" });
+            }
 
             if (webhook == null)
             {
-                _logger.LogWarning("Failed to deserialize Finik webhook");
-                return BadRequest(new { error = "Invalid webhook payload" });
+                return BadRequest(new { error = "Webhook body is null" });
             }
 
-            _logger.LogInformation(
-                "Received Finik webhook: TransactionId={TransactionId}, Status={Status}",
-                webhook.TransactionId, webhook.Status);
-
-            // Читаем все HTTP headers
-            var headers = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            foreach (var header in Request.Headers)
+            // Проверяем подпись, если включена проверка
+            if (_config.VerifySignature)
             {
-                headers[header.Key] = header.Value.ToString();
-            }
+                var signatureHeader = Request.Headers["signature"].FirstOrDefault();
+                if (string.IsNullOrEmpty(signatureHeader))
+                {
+                    _logger.LogWarning("Webhook Finik без подписи. TransactionId: {TransactionId}",
+                        webhook.TransactionId);
+                    return Unauthorized(new { error = "Missing signature header" });
+                }
 
-            // Читаем header signature
-            if (!Request.Headers.TryGetValue("signature", out var signatureHeader))
-            {
-                _logger.LogWarning("Finik webhook missing signature header");
-                return Unauthorized(new { error = "Missing signature header" });
-            }
+                // Получаем все заголовки для канонизации
+                var headers = new Dictionary<string, string>();
+                
+                // Host header
+                var host = Request.Host.Value;
+                if (!string.IsNullOrEmpty(host))
+                {
+                    headers["Host"] = host;
+                }
 
-            var signature = signatureHeader.ToString();
-            if (string.IsNullOrEmpty(signature))
-            {
-                _logger.LogWarning("Finik webhook empty signature header");
-                return Unauthorized(new { error = "Empty signature header" });
-            }
+                // Все x-api-* заголовки
+                foreach (var header in Request.Headers)
+                {
+                    if (header.Key.StartsWith("x-api-", StringComparison.OrdinalIgnoreCase))
+                    {
+                        headers[header.Key] = header.Value.ToString();
+                    }
+                }
 
-            // Собираем query-параметры
-            var queryParams = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-            foreach (var queryParam in Request.Query)
-            {
-                queryParams[queryParam.Key] = queryParam.Value.ToString();
-            }
+                // Проверяем timestamp
+                var timestampHeader = Request.Headers["x-api-timestamp"].FirstOrDefault();
+                if (!string.IsNullOrEmpty(timestampHeader))
+                {
+                    if (long.TryParse(timestampHeader, out var timestamp))
+                    {
+                        var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+                        var skew = Math.Abs(now - timestamp);
+                        
+                        if (skew > _config.TimestampSkewMs)
+                        {
+                            _logger.LogWarning(
+                                "Webhook Finik с недопустимым timestamp. TransactionId: {TransactionId}, Skew: {Skew}ms",
+                                webhook.TransactionId, skew);
+                            return Unauthorized(new { error = "Timestamp skew too large" });
+                        }
+                    }
+                }
 
-            // Получаем метод и путь
-            var method = Request.Method;
-            var absolutePath = Request.Path.Value ?? "/";
+                // Строим каноническую строку
+                var path = Request.Path.Value ?? "/api/v1/webhooks/finik";
+                var canonicalString = _signatureService.BuildCanonicalString(
+                    Request.Method,
+                    path,
+                    headers,
+                    null,
+                    webhook);
 
-            // Сортируем JSON body по ключам для проверки подписи
-            string sortedJsonBody;
-            try
-            {
-                var jsonDoc = JsonDocument.Parse(rawBody);
-                sortedJsonBody = SortJsonObject(jsonDoc.RootElement);
-            }
-            catch (JsonException)
-            {
-                sortedJsonBody = rawBody;
-            }
+                // Получаем публичный ключ Finik
+                var publicKey = _finikPaymentService.GetFinikPublicKey();
 
-            // Проверяем RSA подпись
-            var isValid = _finikService.VerifyWebhookSignature(
-                method,
-                absolutePath,
-                headers,
-                queryParams,
-                sortedJsonBody,
-                signature);
+                // Проверяем подпись
+                var isValid = _signatureService.VerifySignature(
+                    canonicalString,
+                    signatureHeader,
+                    publicKey);
 
-            _logger.LogInformation(
-                "Finik webhook signature verification: Method={Method}, Path={Path}, IsValid={IsValid}",
-                method, absolutePath, isValid);
+                if (!isValid)
+                {
+                    _logger.LogWarning("Неверная подпись webhook Finik. TransactionId: {TransactionId}",
+                        webhook.TransactionId);
+                    return Unauthorized(new { error = "Invalid signature" });
+                }
 
-            if (!isValid)
-            {
-                _logger.LogWarning(
-                    "Invalid Finik webhook signature for TransactionId={TransactionId}",
+                _logger.LogInformation("Подпись webhook Finik проверена успешно. TransactionId: {TransactionId}",
                     webhook.TransactionId);
-                return Unauthorized(new { error = "Invalid signature" });
             }
 
-            // Обрабатываем webhook
-            var success = await _finikService.ProcessWebhookAsync(webhook);
+            // Обрабатываем webhook идемпотентно (по transactionId)
+            if (!string.IsNullOrEmpty(webhook.TransactionId))
+            {
+                // Здесь можно добавить проверку в БД, что этот transactionId уже обработан
+                // Для простоты просто логируем
+                _logger.LogInformation(
+                    "Обработка webhook Finik. TransactionId: {TransactionId}, Status: {Status}, Amount: {Amount}",
+                    webhook.TransactionId, webhook.Status, webhook.Amount);
+            }
 
-            if (success)
+            // Обрабатываем статусы SUCCEEDED / FAILED
+            if (webhook.Status == "SUCCEEDED")
             {
                 _logger.LogInformation(
-                    "Finik webhook processed successfully: TransactionId={TransactionId}, Status={Status}",
-                    webhook.TransactionId, webhook.Status);
-                return Ok(new { status = "ok", message = "Webhook processed successfully" });
+                    "Платеж Finik успешен. TransactionId: {TransactionId}, Amount: {Amount}, Net: {Net}",
+                    webhook.TransactionId, webhook.Amount, webhook.Net);
+
+                // TODO: Обновить статус заказа/платежа в БД
+                // Здесь можно добавить логику обновления заказа
             }
-            else
+            else if (webhook.Status == "FAILED")
             {
                 _logger.LogWarning(
-                    "Failed to process Finik webhook: TransactionId={TransactionId}",
-                    webhook.TransactionId);
-                return BadRequest(new { error = "Failed to process webhook" });
+                    "Платеж Finik провален. TransactionId: {TransactionId}, Amount: {Amount}",
+                    webhook.TransactionId, webhook.Amount);
+
+                // TODO: Обновить статус заказа/платежа в БД
             }
-        }
-        catch (JsonException ex)
-        {
-            _logger.LogWarning(ex, "Failed to parse Finik webhook JSON");
-            return BadRequest(new { error = "Invalid JSON payload" });
-        }
-        catch (InvalidOperationException ex)
-        {
-            _logger.LogWarning(ex, "Ошибка обработки Finik webhook: {Message}", ex.Message);
-            return BadRequest(new { error = ex.Message });
+
+            // Возвращаем 200 OK как можно быстрее
+            // Тяжелая обработка должна выполняться асинхронно
+            return Ok(new { success = true, transactionId = webhook.TransactionId });
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "Ошибка обработки Finik webhook");
-            return StatusCode(500, new { error = "Внутренняя ошибка сервера" });
-        }
-    }
-
-    /// <summary>
-    /// Сортирует JSON объект по ключам
-    /// </summary>
-    private string SortJsonObject(JsonElement element)
-    {
-        if (element.ValueKind == JsonValueKind.Object)
-        {
-            var sortedProperties = element.EnumerateObject()
-                .OrderBy(p => p.Name, StringComparer.Ordinal)
-                .Select(p => $"\"{p.Name}\":{SortJsonObject(p.Value)}");
-
-            return "{" + string.Join(",", sortedProperties) + "}";
-        }
-        else if (element.ValueKind == JsonValueKind.Array)
-        {
-            var sortedItems = element.EnumerateArray()
-                .Select(SortJsonObject);
-
-            return "[" + string.Join(",", sortedItems) + "]";
-        }
-        else
-        {
-            return element.GetRawText();
+            _logger.LogError(ex, "Ошибка при обработке webhook Finik");
+            // Все равно возвращаем 200, чтобы Finik не повторял запрос
+            return Ok(new { success = false, error = "Internal error" });
         }
     }
 }
-
