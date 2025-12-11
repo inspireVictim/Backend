@@ -73,6 +73,12 @@ services:
 
       OptimaPayment_IpCheckEnabled: "false"
 
+      # ======== HTTPS Certificate ========
+      # Для включения HTTPS создайте сертификат в ./certs/yess-cert.pfx
+      # Приложение автоматически включит HTTPS, если сертификат доступен
+      ASPNETCORE_KESTREL__CERTIFICATES__DEFAULT__PATH: /etc/ssl/certs/yess-cert.pfx
+      ASPNETCORE_KESTREL__CERTIFICATES__DEFAULT__PASSWORD: YesSGo!@#!
+
       # ======== FINIK CONFIG ========
       FINIK_API_KEY: fNijGemPQLGMP7QyPfvI2dtoDCUYIzJ4s59hS9wa
       FINIK_ACCOUNT_ID: 54f8eb72-348b-4c4c-85d1-a02d1a37dc78
@@ -111,6 +117,8 @@ services:
 
     volumes:
       - ./uploads:/app/uploads
+      # Монтирование папки с сертификатами (создайте ./certs/yess-cert.pfx для HTTPS)
+      - ./certs:/etc/ssl/certs:ro
 
     networks:
       - yess-network
