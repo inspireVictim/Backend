@@ -44,6 +44,7 @@ public static class DependencyInjection
     {
         // 🔐 Auth
         services.AddScoped<IAuthService, AuthService>();
+        services.AddScoped<IAdminAuthService, AdminAuthService>();
 
         // 👛 Wallet
         services.AddScoped<IWalletService, WalletService>();

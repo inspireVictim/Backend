@@ -1,97 +1,81 @@
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using YessBackend.Application.DTOs.Auth;
+using YessBackend.Application.DTOs.AdminAuth;
 using YessBackend.Application.Services;
-using YessBackend.Infrastructure.Data;
+using YessBackend.Application.DTOs.Auth;
 
 namespace YessBackend.Api.Controllers.v1;
 
 /// <summary>
 /// Контроллер аутентификации администратора
-/// Соответствует /api/v1/admin/auth из Python API
+/// Использует отдельную таблицу AdminUsers
 /// </summary>
 [ApiController]
 [Route("api/v1/admin/auth")]
 [Tags("Admin Authentication")]
 public class AdminAuthController : ControllerBase
 {
-    private readonly IAuthService _authService;
-    private readonly ApplicationDbContext _context;
+    private readonly IAdminAuthService _adminAuthService;
     private readonly ILogger<AdminAuthController> _logger;
 
     public AdminAuthController(
-        IAuthService authService,
-        ApplicationDbContext context,
+        IAdminAuthService adminAuthService,
         ILogger<AdminAuthController> logger)
     {
-        _authService = authService;
-        _context = context;
+        _adminAuthService = adminAuthService;
         _logger = logger;
     }
 
     /// <summary>
     /// Аутентификация администратора
     /// POST /api/v1/admin/auth/login
-    /// Поддерживает username (phone/email) и password
+    /// Поддерживает вход по username или email
     /// </summary>
     [HttpPost("login")]
     [ProducesResponseType(typeof(object), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status401Unauthorized)]
-    public async Task<ActionResult> AdminLogin([FromBody] AdminLoginRequest request)
+    public async Task<ActionResult> Login([FromBody] AdminLoginDto loginDto)
     {
         try
         {
-            // Определяем, это телефон или email
-            var isEmail = request.Username.Contains("@");
+            var tokenResponse = await _adminAuthService.LoginAsync(loginDto);
             
-            Domain.Entities.User? user;
-            if (isEmail)
+            // Получаем информацию об администраторе для ответа
+            Domain.Entities.AdminUser? adminUser = null;
+            if (loginDto.Username.Contains("@"))
             {
-                user = await _context.Users
-                    .FirstOrDefaultAsync(u => u.Email == request.Username);
+                adminUser = await _adminAuthService.GetAdminByEmailAsync(loginDto.Username);
             }
             else
             {
-                user = await _context.Users
-                    .FirstOrDefaultAsync(u => u.Phone == request.Username);
+                adminUser = await _adminAuthService.GetAdminByUsernameAsync(loginDto.Username);
             }
 
-            if (user == null)
+            if (adminUser == null)
             {
-                return Unauthorized(new { error = "Неверный логин или пароль" });
+                return Unauthorized(new { error = "Администратор не найден" });
             }
-
-            // Проверяем пароль
-            if (!_authService.VerifyPassword(request.Password, user.PasswordHash ?? string.Empty))
-            {
-                return Unauthorized(new { error = "Неверный логин или пароль" });
-            }
-
-            // Обновляем время последнего входа
-            user.LastLoginAt = DateTime.UtcNow;
-            await _context.SaveChangesAsync();
-
-            // Создаем токены
-            var accessToken = _authService.CreateAccessToken(user);
-            var refreshToken = _authService.CreateRefreshToken(user);
 
             return Ok(new
             {
-                access_token = accessToken,
-                refresh_token = refreshToken,
-                token_type = "bearer",
-                expires_in = 3600, // 1 час
+                access_token = tokenResponse.AccessToken,
+                refresh_token = tokenResponse.RefreshToken,
+                token_type = tokenResponse.TokenType,
+                expires_in = tokenResponse.ExpiresIn,
                 admin = new
                 {
-                    id = user.Id.ToString(),
-                    email = user.Email ?? user.Phone,
-                    phone = user.Phone,
-                    role = "admin",
-                    name = (!string.IsNullOrWhiteSpace($"{user.FirstName} {user.LastName}".Trim()) 
-                        ? $"{user.FirstName} {user.LastName}".Trim() 
-                        : (user.Email ?? user.Phone ?? "Admin"))
+                    id = adminUser.Id.ToString(),
+                    username = adminUser.Username,
+                    email = adminUser.Email,
+                    role = adminUser.Role,
+                    is_active = adminUser.IsActive,
+                    name = adminUser.Username
                 }
             });
+        }
+        catch (InvalidOperationException ex)
+        {
+            _logger.LogWarning("Ошибка входа администратора: {Message}", ex.Message);
+            return Unauthorized(new { error = ex.Message });
         }
         catch (Exception ex)
         {
@@ -100,10 +84,43 @@ public class AdminAuthController : ControllerBase
         }
     }
 
-    public class AdminLoginRequest
+    /// <summary>
+    /// Регистрация нового администратора
+    /// POST /api/v1/admin/auth/register
+    /// Требует прав супер-администратора (можно добавить авторизацию позже)
+    /// </summary>
+    [HttpPost("register")]
+    [ProducesResponseType(typeof(AdminResponseDto), StatusCodes.Status201Created)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<AdminResponseDto>> Register([FromBody] AdminRegisterDto registerDto)
     {
-        public string Username { get; set; } = string.Empty;
-        public string Password { get; set; } = string.Empty;
+        try
+        {
+            var adminUser = await _adminAuthService.RegisterAdminAsync(registerDto);
+
+            var responseDto = new AdminResponseDto
+            {
+                Id = adminUser.Id,
+                Username = adminUser.Username,
+                Email = adminUser.Email,
+                Role = adminUser.Role,
+                IsActive = adminUser.IsActive,
+                CreatedAt = adminUser.CreatedAt,
+                UpdatedAt = adminUser.UpdatedAt
+            };
+
+            return CreatedAtAction(nameof(Register), responseDto);
+        }
+        catch (InvalidOperationException ex)
+        {
+            _logger.LogWarning("Ошибка регистрации администратора: {Message}", ex.Message);
+            return BadRequest(new { error = ex.Message });
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "Ошибка регистрации администратора");
+            return StatusCode(500, new { error = "Внутренняя ошибка сервера" });
+        }
     }
 }
 

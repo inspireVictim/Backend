@@ -13,6 +13,7 @@ public class ApplicationDbContext : DbContext
     
     // Users and Authentication
     public DbSet<User> Users { get; set; }
+    public DbSet<AdminUser> AdminUsers { get; set; }
     public DbSet<Role> Roles { get; set; }
     public DbSet<UserRole> UserRoles { get; set; }
     public DbSet<Wallet> Wallets { get; set; }
@@ -71,6 +72,7 @@ public class ApplicationDbContext : DbContext
         
         // Применяем конфигурации сущностей
         modelBuilder.ApplyConfiguration(new UserConfiguration());
+        modelBuilder.ApplyConfiguration(new AdminUserConfiguration());
         modelBuilder.ApplyConfiguration(new WalletConfiguration());
         modelBuilder.ApplyConfiguration(new PartnerConfiguration());
         modelBuilder.ApplyConfiguration(new PartnerProductConfiguration());
