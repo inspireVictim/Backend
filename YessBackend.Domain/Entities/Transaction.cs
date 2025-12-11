@@ -16,7 +16,6 @@ public class Transaction
     public int UserId { get; set; }
     
     public int? PartnerId { get; set; }
-    public int? OrderId { get; set; }
     
     [Required]
     [MaxLength(50)]
@@ -71,7 +70,8 @@ public class Transaction
     [ForeignKey("PartnerId")]
     public virtual Partner? Partner { get; set; }
     
-    [ForeignKey("OrderId")]
+    // Navigation property to Order (inverse relationship)
+    // FK is in Order.TransactionId, not here
     public virtual Order? Order { get; set; }
     
     public virtual ICollection<Refund> Refunds { get; set; } = new List<Refund>();

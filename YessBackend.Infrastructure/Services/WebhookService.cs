@@ -63,8 +63,9 @@ public class WebhookService : IWebhookService
                 throw new InvalidOperationException("Missing transaction_id");
             }
 
-            // Поиск транзакции
+            // Поиск транзакции с включением навигационного свойства Order
             var transaction = await _context.Transactions
+                .Include(t => t.Order)
                 .FirstOrDefaultAsync(t => t.Id == transactionId);
 
             if (transaction == null)
@@ -78,11 +79,10 @@ public class WebhookService : IWebhookService
                 transaction.Status = "completed";
                 transaction.CompletedAt = DateTime.UtcNow;
 
-                // Если это оплата заказа
-                if (transaction.OrderId.HasValue)
+                // Если это оплата заказа (проверяем через навигационное свойство)
+                if (transaction.Order != null)
                 {
-                    var order = await _context.Orders
-                        .FirstOrDefaultAsync(o => o.Id == transaction.OrderId.Value);
+                    var order = transaction.Order;
 
                     if (order != null && order.Status == OrderStatus.Pending)
                     {

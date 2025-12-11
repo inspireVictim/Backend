@@ -75,7 +75,6 @@ public class OrderPaymentService : IOrderPaymentService
                 var transaction = new Transaction
                 {
                     UserId = userId,
-                    OrderId = orderId,
                     Amount = order.FinalAmount,
                     Type = "payment",
                     Status = "completed",
@@ -85,8 +84,10 @@ public class OrderPaymentService : IOrderPaymentService
                 };
 
                 _context.Transactions.Add(transaction);
+                await _context.SaveChangesAsync(); // Сохраняем чтобы получить transaction.Id
 
-                // Обновляем заказ
+                // Обновляем заказ - связываем с транзакцией через TransactionId
+                order.TransactionId = transaction.Id;
                 order.PaymentMethod = "wallet";
                 order.PaymentStatus = "paid";
                 order.Status = OrderStatus.Paid;

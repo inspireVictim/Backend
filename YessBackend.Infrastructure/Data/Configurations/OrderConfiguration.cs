@@ -39,6 +39,13 @@ public class OrderConfiguration : IEntityTypeConfiguration<Order>
             .HasForeignKey(o => o.PartnerId)
             .OnDelete(DeleteBehavior.Restrict);
 
+        // One-to-One relationship with Transaction
+        // Order.TransactionId is the FK (owned by Order)
+        builder.HasOne(o => o.Transaction)
+            .WithOne(t => t.Order)
+            .HasForeignKey<Order>(o => o.TransactionId)
+            .OnDelete(DeleteBehavior.SetNull);
+
         builder.HasMany(o => o.Items)
             .WithOne(i => i.Order)
             .HasForeignKey(i => i.OrderId)

@@ -17,7 +17,6 @@ public class TransactionConfiguration : IEntityTypeConfiguration<Transaction>
         // Индексы
         builder.HasIndex(t => t.UserId);
         builder.HasIndex(t => t.PartnerId);
-        builder.HasIndex(t => t.OrderId);
         builder.HasIndex(t => t.Type);
         builder.HasIndex(t => t.Status);
         builder.HasIndex(t => t.CreatedAt);
@@ -40,9 +39,7 @@ public class TransactionConfiguration : IEntityTypeConfiguration<Transaction>
             .HasForeignKey(t => t.PartnerId)
             .OnDelete(DeleteBehavior.SetNull);
 
-        builder.HasOne(t => t.Order)
-            .WithMany()
-            .HasForeignKey(t => t.OrderId)
-            .OnDelete(DeleteBehavior.SetNull);
+        // Order relationship is configured in OrderConfiguration.cs
+        // Transaction.Order is inverse navigation property (FK is in Order.TransactionId)
     }
 }

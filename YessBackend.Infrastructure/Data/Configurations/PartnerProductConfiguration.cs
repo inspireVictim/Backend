@@ -24,8 +24,8 @@ public class PartnerProductConfiguration : IEntityTypeConfiguration<PartnerProdu
 
         // Relationships
         builder.HasOne(p => p.Partner)
-            .WithMany()
-            .HasForeignKey("PartnerId")
+            .WithMany(p => p.Products)
+            .HasForeignKey(p => p.PartnerId)
             .OnDelete(DeleteBehavior.Cascade);
     }
 }

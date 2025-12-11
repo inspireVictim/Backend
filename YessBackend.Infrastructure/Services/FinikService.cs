@@ -334,15 +334,16 @@ tQIDAQAB
         }
 
         // Создаем или обновляем транзакцию
+        // Ищем через Order, так как FK теперь в Order.TransactionId
         var transaction = await _context.Transactions
-            .FirstOrDefaultAsync(t => t.OrderId == orderId && t.GatewayTransactionId == webhook.TransactionId);
+            .Include(t => t.Order)
+            .FirstOrDefaultAsync(t => t.Order != null && t.Order.Id == orderId && t.GatewayTransactionId == webhook.TransactionId);
 
         if (transaction == null)
         {
             transaction = new Transaction
             {
                 UserId = order.UserId,
-                OrderId = orderId,
                 PartnerId = order.PartnerId,
                 Type = "payment",
                 Amount = webhook.Amount > 0 ? webhook.Amount : order.FinalAmount,
@@ -355,14 +356,16 @@ tQIDAQAB
             };
 
             _context.Transactions.Add(transaction);
+            await _context.SaveChangesAsync(); // Сохраняем чтобы получить transaction.Id
+            
+            // Связываем Order с Transaction через TransactionId
+            order.TransactionId = transaction.Id;
         }
         else
         {
             transaction.Status = "completed";
             transaction.CompletedAt = order.PaidAt;
         }
-
-        order.TransactionId = transaction.Id;
 
         await _context.SaveChangesAsync();
 
@@ -387,8 +390,10 @@ tQIDAQAB
         order.PaymentStatus = "failed";
 
         // Обновляем транзакцию, если есть
+        // Ищем через Order, так как FK теперь в Order.TransactionId
         var transaction = await _context.Transactions
-            .FirstOrDefaultAsync(t => t.OrderId == orderId && t.GatewayTransactionId == webhook.TransactionId);
+            .Include(t => t.Order)
+            .FirstOrDefaultAsync(t => t.Order != null && t.Order.Id == orderId && t.GatewayTransactionId == webhook.TransactionId);
 
         if (transaction != null)
         {

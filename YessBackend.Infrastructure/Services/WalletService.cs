@@ -97,7 +97,6 @@ public class WalletService : IWalletService
         {
             UserId = userId,
             PartnerId = partnerId,
-            OrderId = orderId,
             Type = type,
             Amount = amount,
             Status = "completed",
@@ -109,7 +108,18 @@ public class WalletService : IWalletService
         };
 
         _context.Transactions.Add(transaction);
-        await _context.SaveChangesAsync();
+        await _context.SaveChangesAsync(); // Сохраняем чтобы получить transaction.Id
+
+        // Если это транзакция связанная с заказом, обновляем Order.TransactionId
+        if (orderId.HasValue)
+        {
+            var order = await _context.Orders.FindAsync(orderId.Value);
+            if (order != null)
+            {
+                order.TransactionId = transaction.Id;
+                await _context.SaveChangesAsync();
+            }
+        }
 
         return transaction;
     }
