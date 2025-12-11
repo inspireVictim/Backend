@@ -1,8 +1,12 @@
 using YessBackend.Application.Config;
 using System.Text;
+using System.IO;
+using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.Extensions.Caching.StackExchangeRedis;
+using Microsoft.Extensions.Logging;
 using YessBackend.Infrastructure.Data;
 using Microsoft.EntityFrameworkCore;
 using YessBackend.Application.Extensions;
@@ -15,11 +19,56 @@ using YessBackend.Application.Interfaces.Payments;
 var builder = WebApplication.CreateBuilder(args);
 
 // =======================
-//      Server HTTP 5000
+//   Kestrel HTTP/HTTPS
 // =======================
-builder.WebHost.UseKestrel(options =>
+// Флаг для отслеживания успешной настройки HTTPS endpoint
+bool httpsAvailable = false;
+
+builder.WebHost.ConfigureKestrel(options =>
 {
+    // HTTP всегда включён на порту 5000 (для обратного прокси nginx)
     options.ListenAnyIP(5000);
+    
+    if (builder.Environment.IsDevelopment())
+    {
+        // Development: автоматически использует dev-сертификат
+        options.ListenAnyIP(5001, listenOptions =>
+        {
+            listenOptions.UseHttps();
+        });
+        httpsAvailable = true;
+    }
+    else
+    {
+        // Production: загрузка сертификата из конфигурации
+        var certPath = builder.Configuration["Kestrel:Certificates:Default:Path"];
+        var certPassword = builder.Configuration["Kestrel:Certificates:Default:Password"];
+        
+        if (!string.IsNullOrWhiteSpace(certPath) && File.Exists(certPath))
+        {
+            try
+            {
+                options.ListenAnyIP(5001, listenOptions =>
+                {
+                    if (string.IsNullOrWhiteSpace(certPassword))
+                        listenOptions.UseHttps(certPath);
+                    else
+                        listenOptions.UseHttps(certPath, certPassword);
+                });
+                httpsAvailable = true;
+            }
+            catch (CryptographicException)
+            {
+                // Логирование будет выполнено после создания logger
+                // Приложение продолжит работу без HTTPS
+            }
+            catch (Exception)
+            {
+                // Обработка других исключений при загрузке сертификата
+                // Приложение продолжит работу без HTTPS
+            }
+        }
+    }
 });
 
 var configuration = builder.Configuration;
@@ -158,6 +207,44 @@ using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
     db.Database.Migrate();
+}
+
+// =======================
+//   HTTPS Redirection
+// =======================
+var httpsLogger = app.Services.GetRequiredService<ILogger<Program>>();
+
+if (httpsAvailable)
+{
+    app.UseHttpsRedirection();
+    
+    if (!app.Environment.IsDevelopment())
+    {
+        app.UseHsts();
+        httpsLogger.LogInformation("HTTPS Redirection и HSTS включены");
+    }
+    else
+    {
+        httpsLogger.LogInformation("HTTPS Redirection включён для Development");
+    }
+}
+else
+{
+    httpsLogger.LogWarning("HTTPS недоступен, редирект отключен");
+    
+    // Логируем причину для Production
+    if (!app.Environment.IsDevelopment())
+    {
+        var certPath = configuration["Kestrel:Certificates:Default:Path"];
+        if (string.IsNullOrWhiteSpace(certPath))
+        {
+            httpsLogger.LogWarning("Путь к сертификату не указан в конфигурации");
+        }
+        else if (!File.Exists(certPath))
+        {
+            httpsLogger.LogWarning($"Сертификат не найден по пути: {certPath}");
+        }
+    }
 }
 
 // =======================

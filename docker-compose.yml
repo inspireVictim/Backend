@@ -54,7 +54,8 @@ services:
       redis:
         condition: service_started
     ports:
-      - "8000:5000"
+      - "8000:5000"   # HTTP: внешний 8000 → внутренний 5000
+      - "8443:5001"   # HTTPS: внешний 8443 → внутренний 5001
 
     environment:
       ASPNETCORE_URLS: http://0.0.0.0:5000
