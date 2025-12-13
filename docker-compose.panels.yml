@@ -1,0 +1,81 @@
+version: '3.8'
+
+# Этот файл расширяет docker-compose.yml, добавляя панели
+# Использование: docker-compose -f docker-compose.yml -f docker-compose.panels.yml up -d
+
+services:
+  # Базовые сервисы уже определены в docker-compose.yml
+  # Здесь мы только добавляем панели
+
+  # Admin Panel
+  admin-panel:
+    build:
+      context: ../PANEL-s_YESS-Go/panels-ts-v2
+      dockerfile: admin-panel/Dockerfile
+    container_name: yess-admin-panel
+    restart: unless-stopped
+    ports:
+      - "3003:80"
+    depends_on:
+      - csharp-backend
+    networks:
+      - yess-network
+    environment:
+      - NODE_ENV=production
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Partner Panel
+  partner-panel:
+    build:
+      context: ../PANEL-s_YESS-Go/panels-ts-v2
+      dockerfile: partner-panel/Dockerfile
+    container_name: yess-partner-panel
+    restart: unless-stopped
+    ports:
+      - "3004:80"
+    depends_on:
+      - csharp-backend
+    networks:
+      - yess-network
+    environment:
+      - NODE_ENV=production
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # Nginx Reverse Proxy для объединения всех сервисов
+  nginx-proxy:
+    image: nginx:1.27-alpine
+    container_name: yess-nginx-proxy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx-panels.conf:/etc/nginx/nginx.conf:ro
+      - ./certs:/etc/nginx/ssl:ro
+    depends_on:
+      - admin-panel
+      - partner-panel
+      - csharp-backend
+    networks:
+      - yess-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+networks:
+  yess-network:
+    external: true
+    name: yess-backend-dotnet_yess-network
+
