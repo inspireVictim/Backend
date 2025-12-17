@@ -1,17 +1,22 @@
 using Microsoft.Extensions.DependencyInjection;
+using YessBackend.Application.Services; // <- подключаем пространство имён с IWebhookService
 
-namespace YessBackend.Application.Extensions;
-
-public static class ServiceExtensions
+namespace YessBackend.Application.Extensions
 {
-    public static IServiceCollection AddApplicationServices(this IServiceCollection services)
+    public static class ServiceExtensions
     {
-        // Регистрация AutoMapper
-        services.AddAutoMapper(typeof(ServiceExtensions));
+        public static IServiceCollection AddApplicationServices(this IServiceCollection services)
+        {
+            // Регистрация AutoMapper
+            services.AddAutoMapper(typeof(ServiceExtensions));
 
-        // Регистрация FluentValidation
-        // TODO: services.AddValidatorsFromAssemblyContaining<ServiceExtensions>();
+            // Регистрация FluentValidation
+            // TODO: services.AddValidatorsFromAssemblyContaining<ServiceExtensions>();
 
-        return services;
+            // ✅ Регистрация сервисов приложения
+            services.AddScoped<IWebhookService, WebhookService>();
+
+            return services;
+        }
     }
 }

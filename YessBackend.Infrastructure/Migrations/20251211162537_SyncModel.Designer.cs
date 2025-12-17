@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 using YessBackend.Infrastructure.Data;
@@ -12,9 +13,11 @@ using YessBackend.Infrastructure.Data;
 namespace YessBackend.Infrastructure.Migrations
 {
     [DbContext(typeof(ApplicationDbContext))]
-    partial class ApplicationDbContextModelSnapshot : ModelSnapshot
+    [Migration("20251211162537_SyncModel")]
+    partial class SyncModel
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -414,8 +417,7 @@ namespace YessBackend.Infrastructure.Migrations
 
                     b.HasIndex("Status");
 
-                    b.HasIndex("TransactionId")
-                        .IsUnique();
+                    b.HasIndex("TransactionId");
 
                     b.HasIndex("UserId");
 
@@ -716,6 +718,9 @@ namespace YessBackend.Infrastructure.Migrations
                     b.Property<int>("PartnerId")
                         .HasColumnType("integer");
 
+                    b.Property<int?>("PartnerId1")
+                        .HasColumnType("integer");
+
                     b.Property<decimal>("Price")
                         .HasColumnType("decimal(10,2)");
 
@@ -743,6 +748,8 @@ namespace YessBackend.Infrastructure.Migrations
                     b.HasIndex("IsAvailable");
 
                     b.HasIndex("PartnerId");
+
+                    b.HasIndex("PartnerId1");
 
                     b.HasIndex("PartnerId", "IsAvailable")
                         .HasDatabaseName("idx_partner_product_available");
@@ -1345,6 +1352,9 @@ namespace YessBackend.Infrastructure.Migrations
                         .HasMaxLength(255)
                         .HasColumnType("character varying(255)");
 
+                    b.Property<int?>("OrderId")
+                        .HasColumnType("integer");
+
                     b.Property<int?>("PartnerId")
                         .HasColumnType("integer");
 
@@ -1384,6 +1394,8 @@ namespace YessBackend.Infrastructure.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("CreatedAt");
+
+                    b.HasIndex("OrderId");
 
                     b.HasIndex("PartnerId");
 
@@ -1714,9 +1726,8 @@ namespace YessBackend.Infrastructure.Migrations
                         .IsRequired();
 
                     b.HasOne("YessBackend.Domain.Entities.Transaction", "Transaction")
-                        .WithOne("Order")
-                        .HasForeignKey("YessBackend.Domain.Entities.Order", "TransactionId")
-                        .OnDelete(DeleteBehavior.SetNull);
+                        .WithMany()
+                        .HasForeignKey("TransactionId");
 
                     b.HasOne("YessBackend.Domain.Entities.User", "User")
                         .WithMany("Orders")
@@ -1793,10 +1804,14 @@ namespace YessBackend.Infrastructure.Migrations
             modelBuilder.Entity("YessBackend.Domain.Entities.PartnerProduct", b =>
                 {
                     b.HasOne("YessBackend.Domain.Entities.Partner", "Partner")
-                        .WithMany("Products")
+                        .WithMany()
                         .HasForeignKey("PartnerId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+
+                    b.HasOne("YessBackend.Domain.Entities.Partner", null)
+                        .WithMany("Products")
+                        .HasForeignKey("PartnerId1");
 
                     b.Navigation("Partner");
                 });
@@ -1814,6 +1829,11 @@ namespace YessBackend.Infrastructure.Migrations
 
             modelBuilder.Entity("YessBackend.Domain.Entities.Transaction", b =>
                 {
+                    b.HasOne("YessBackend.Domain.Entities.Order", "Order")
+                        .WithMany()
+                        .HasForeignKey("OrderId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.HasOne("YessBackend.Domain.Entities.Partner", "Partner")
                         .WithMany("Transactions")
                         .HasForeignKey("PartnerId")
@@ -1824,6 +1844,8 @@ namespace YessBackend.Infrastructure.Migrations
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+
+                    b.Navigation("Order");
 
                     b.Navigation("Partner");
 
@@ -1907,8 +1929,6 @@ namespace YessBackend.Infrastructure.Migrations
 
             modelBuilder.Entity("YessBackend.Domain.Entities.Transaction", b =>
                 {
-                    b.Navigation("Order");
-
                     b.Navigation("Refunds");
                 });
 
